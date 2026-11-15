@@ -204,6 +204,27 @@ export async function deleteMock(id: string, sessionId: string) {
   revalidatePath(`/sessions/${sessionId}`);
 }
 
+/** Sets or clears an interview's meeting link (Zoom / Teams / Google Meet). */
+export async function setMeetingUrl(sessionId: string, url: string): Promise<{ error?: string; url?: string | null }> {
+  const parsed = z
+    .string()
+    .trim()
+    .max(2000)
+    .transform((v) => v || null)
+    .pipe(z.url({ protocol: /^https$/, message: "Paste the full meeting link, starting with https://" }).nullable())
+    .safeParse(url);
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const { supabase } = await requireUser();
+  const { error } = await supabase
+    .from("interview_sessions")
+    .update({ meeting_url: parsed.data })
+    .eq("id", z.uuid().parse(sessionId));
+  if (error) return { error: "Couldn't save the link. Please try again." };
+  revalidatePath(`/live/${sessionId}`);
+  revalidatePath(`/sessions/${sessionId}`);
+  return { url: parsed.data };
+}
+
 /** Ticks or unticks a prep checklist item. */
 export async function togglePrepItem(sessionId: string, itemId: string, done: boolean) {
   const { supabase } = await requireUser();

@@ -8,7 +8,6 @@ import {
   EyeOff,
   Languages,
   ScanText,
-  ExternalLink,
   Info,
   Loader2,
   Mic,
@@ -25,7 +24,8 @@ import { Markdown } from "@/components/markdown";
 import { useSpeech } from "@/components/use-speech";
 import { AiRequestError, postJson, streamAnswer } from "@/lib/ai/client";
 import type { AiError } from "@/lib/ai/errors";
-import { PLATFORM_LABEL, SHARE_TIPS, detectPlatform } from "@/lib/meeting";
+import { SHARE_TIPS, detectPlatform } from "@/lib/meeting";
+import { MeetingLink } from "./meeting-link";
 import { PopOutPortal, usePopOut } from "./pop-out";
 import { captureScreenOnce, useMeetingAudio } from "./use-meeting-audio";
 import { DebriefView } from "@/components/debrief-view";
@@ -378,23 +378,7 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
   return (
     <div className="space-y-5">
       {/* Meeting */}
-      <div className="card p-4 sm:p-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted">Meeting</p>
-            {meetingUrl ? (
-              <p className="truncate font-medium">{PLATFORM_LABEL[platform ?? "other"]} · <span className="text-muted">{meetingUrl}</span></p>
-            ) : (
-              <p className="text-sm text-muted">No meeting link yet. Add your Zoom, Teams or Meet link under <b>Details</b>.</p>
-            )}
-          </div>
-          {meetingUrl && (
-            <a href={meetingUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary">
-              <ExternalLink className="size-4" /> Join {platform && platform !== "other" ? PLATFORM_LABEL[platform] : "meeting"}
-            </a>
-          )}
-        </div>
-      </div>
+      <MeetingLink sessionId={sessionId} initialUrl={meetingUrl} />
 
       {/* Controls */}
       <div className="card space-y-4 p-4 sm:p-5">
