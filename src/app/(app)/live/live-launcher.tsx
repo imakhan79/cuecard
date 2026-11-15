@@ -5,11 +5,14 @@ import { useActionState, useState } from "react";
 import { ChevronDown, Loader2, Radio } from "lucide-react";
 import { PLATFORM_LABEL, detectPlatform } from "@/lib/meeting";
 import { startLiveInterview } from "../actions";
+import { ResumeUpload } from "@/components/resume-upload";
 
 export function LiveLauncher({ resumes }: { resumes: { id: string; title: string }[] }) {
   const [state, action, pending] = useActionState(startLiveInterview, undefined);
   const [url, setUrl] = useState("");
   const [showJd, setShowJd] = useState(false);
+  const [list, setList] = useState(resumes);
+  const [resumeId, setResumeId] = useState(resumes[0]?.id ?? "");
   const platform = detectPlatform(url);
 
   return (
@@ -43,18 +46,45 @@ export function LiveLauncher({ resumes }: { resumes: { id: string; title: string
       </div>
 
       <div>
-        <label htmlFor="resume_id" className="label">Resume</label>
-        <select id="resume_id" name="resume_id" className="input" defaultValue={resumes[0]?.id ?? ""}>
-          <option value="">No resume (answers will use placeholders)</option>
-          {resumes.map((r) => (
-            <option key={r.id} value={r.id}>{r.title}</option>
-          ))}
+        <label htmlFor="interview_type" className="label">Interview format</label>
+        <select id="interview_type" name="interview_type" className="input" defaultValue="general">
+          <option value="general">General / mixed</option>
+          <option value="behavioral">Behavioural</option>
+          <option value="technical">Technical</option>
+          <option value="coding">Coding (use Screen Help for problems on screen)</option>
+          <option value="system_design">System design</option>
+          <option value="case_study">Case study</option>
+          <option value="one_way_video">One-way video (HireVue etc.)</option>
         </select>
-        {!resumes.length && (
-          <p className="mt-1.5 text-xs text-warn">
-            <Link href="/resumes" className="font-medium underline">Add your resume</Link> first for answers based on your real experience.
-          </p>
-        )}
+      </div>
+
+      <div>
+        <label htmlFor="resume_id" className="label">Resume</label>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+          <select
+            id="resume_id"
+            name="resume_id"
+            className="input sm:flex-1"
+            value={resumeId}
+            onChange={(e) => setResumeId(e.target.value)}
+          >
+            <option value="">No resume (answers will use placeholders)</option>
+            {list.map((r) => (
+              <option key={r.id} value={r.id}>{r.title}</option>
+            ))}
+          </select>
+          <ResumeUpload
+            className="btn-secondary w-full whitespace-nowrap py-2.5 sm:w-auto"
+            onUploaded={(r) => {
+              setList((l) => [r, ...l]);
+              setResumeId(r.id);
+            }}
+          />
+        </div>
+        <p className="mt-1.5 text-xs text-muted">
+          Upload a PDF, Word (.docx) or text file. It&apos;s saved to <Link href="/resumes" className="underline">Resumes</Link> and
+          answers only use facts from it.
+        </p>
       </div>
 
       <div>

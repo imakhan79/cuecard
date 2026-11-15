@@ -4,6 +4,10 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AudioLines,
+  ClipboardCheck,
+  EyeOff,
+  Languages,
+  ScanText,
   ExternalLink,
   Info,
   Loader2,
@@ -23,7 +27,11 @@ import { AiRequestError, postJson, streamAnswer } from "@/lib/ai/client";
 import type { AiError } from "@/lib/ai/errors";
 import { PLATFORM_LABEL, SHARE_TIPS, detectPlatform } from "@/lib/meeting";
 import { PopOutPortal, usePopOut } from "./pop-out";
-import { useMeetingAudio } from "./use-meeting-audio";
+import { captureScreenOnce, useMeetingAudio } from "./use-meeting-audio";
+import { DebriefView } from "@/components/debrief-view";
+import { streamForm } from "@/lib/ai/client";
+import type { Debrief } from "@/lib/types";
+import { LANGUAGES } from "@/lib/languages";
 
 type Line = { id: number; text: string };
 type Card = { id: number; question: string; answer: string; streaming: boolean };
@@ -68,6 +76,18 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
     autoRef.current = auto;
   }, [auto]);
 
+  // Private mode: suggestions are shown but nothing from this call is saved.
+  const [privateMode, setPrivateMode] = useState(false);
+  const privateRef = useRef(false);
+  useEffect(() => {
+    privateRef.current = privateMode;
+  }, [privateMode]);
+  const [lang, setLang] = useState("auto");
+  const langRef = useRef("auto");
+  useEffect(() => {
+    langRef.current = lang;
+  }, [lang]);
+
   const popout = usePopOut();
 
   /* ---------------- answering ---------------- */
@@ -100,7 +120,7 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
 
     try {
       const saved = await streamAnswer(
-        { mode: "copilot", sessionId, transcript },
+        { mode: "copilot", sessionId, transcript, save: !privateRef.current },
         (chunk) => {
           raw += chunk;
           const { question, answer } = parseStream(raw);
@@ -113,7 +133,7 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
       answeredUpTo.current = upTo;
       setAnsweredId(upTo);
       const { question } = parseStream(raw);
-      if (!saved || isNone(question)) {
+      if (!question || isNone(question) || (!saved && !privateRef.current)) {
         setCards((c) => c.filter((x) => x.id !== id)); // no question detected
       } else {
         setCards((c) => c.map((x) => (x.id === id ? { ...x, streaming: false } : x)));
@@ -170,7 +190,7 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
         try {
           const form = new FormData();
           form.append("audio", clip, "clip.webm");
-          form.append("lang", navigator.language || "en");
+          form.append("lang", langRef.current);
           const { text } = await postJson<{ text: string }>("/api/transcribe", form);
           addLine(text);
         } catch (e) {
@@ -227,6 +247,90 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
   const live = source === "meeting" ? meeting.active : running && speech.listening;
   const captureError = source === "meeting" ? meeting.error?.message : speech.error;
   const current = cards[0] ?? null;
+
+  /* ---------------- Screen Help ---------------- */
+
+  const [screen, setScreen] = useState<{ text: string; streaming: boolean; error: AiError | null } | null>(null);
+  const [autoScreen, setAutoScreen] = useState(false);
+  const screenBusy = useRef(false);
+  const { active: meetingActive, grabFrame, signature } = meeting;
+
+  const screenHelp = useCallback(async () => {
+    if (screenBusy.current) return;
+    screenBusy.current = true;
+    setScreen({ text: "", streaming: true, error: null });
+    try {
+      const shot = meetingActive ? await grabFrame() : await captureScreenOnce();
+      if (!shot) throw new AiRequestError({ code: "bad_request", message: "Couldn't capture the screen. Try again." });
+      const form = new FormData();
+      form.append("image", shot, "screen.jpg");
+      form.append("sessionId", sessionId);
+      let text = "";
+      await streamForm("/api/screen-help", form, (c) => {
+        text += c;
+        setScreen({ text, streaming: true, error: null });
+      });
+      setScreen({ text, streaming: false, error: null });
+    } catch (e) {
+      if ((e as Error).name === "NotAllowedError") setScreen(null);
+      else
+        setScreen({
+          text: "",
+          streaming: false,
+          error: e instanceof AiRequestError ? e.error : { code: "unknown", message: "Screen Help failed. Please retry." },
+        });
+    } finally {
+      screenBusy.current = false;
+    }
+  }, [meetingActive, grabFrame, sessionId]);
+
+  // Automatic Screen Help: when the shared screen changes and then settles, read it (at most every 25s).
+  useEffect(() => {
+    if (!autoScreen || !meetingActive) return;
+    let last: Uint8ClampedArray | null = null;
+    let changedAt = 0;
+    let lastRun = 0;
+    const t = window.setInterval(() => {
+      const sig = signature();
+      if (!sig) return;
+      if (last) {
+        let diff = 0;
+        for (let i = 0; i < sig.length; i++) diff += Math.abs(sig[i] - last[i]);
+        if (diff / sig.length > 10) changedAt = Date.now();
+      } else changedAt = Date.now();
+      last = sig;
+      const now = Date.now();
+      if (changedAt && now - changedAt > 2500 && now - lastRun > 25000) {
+        changedAt = 0;
+        lastRun = now;
+        void screenHelp();
+      }
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [autoScreen, meetingActive, signature, screenHelp]);
+
+  /* ---------------- Debrief ---------------- */
+
+  const [debrief, setDebrief] = useState<{ data: Debrief | null; loading: boolean; error: AiError | null } | null>(null);
+  const endAndDebrief = async () => {
+    stop();
+    setDebrief({ data: null, loading: true, error: null });
+    try {
+      const { debrief } = await postJson<{ debrief: { report: Debrief } }>("/api/debrief", {
+        sessionId,
+        source: "live",
+        transcript: linesRef.current.map((l) => l.text).join("\n").slice(-40000),
+      });
+      setDebrief({ data: debrief.report, loading: false, error: null });
+      router.refresh();
+    } catch (e) {
+      setDebrief({
+        data: null,
+        loading: false,
+        error: e instanceof AiRequestError ? e.error : { code: "unknown", message: "Debrief failed. Please retry." },
+      });
+    }
+  };
 
   /* ---------------- UI ---------------- */
 
@@ -359,9 +463,69 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
           </label>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+          <button type="button" onClick={() => void screenHelp()} disabled={screen?.streaming} className="btn-secondary" title="Read a coding problem, diagram or error from your screen">
+            {screen?.streaming ? <Loader2 className="size-4 animate-spin" /> : <ScanText className="size-4" />} Screen Help
+          </button>
+          <label className={`inline-flex items-center gap-2 text-sm ${meeting.active ? "cursor-pointer" : "opacity-50"}`} title="Re-read the shared screen automatically when it changes">
+            <input type="checkbox" checked={autoScreen} disabled={!meeting.active} onChange={(e) => setAutoScreen(e.target.checked)} className="size-4 accent-[var(--accent)]" /> Auto
+          </label>
+          <label className="ml-auto inline-flex items-center gap-2 text-sm">
+            <Languages className="size-4 text-muted" />
+            <select value={lang} onChange={(e) => setLang(e.target.value)} disabled={isRunning} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm" aria-label="Interview language">
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>{l.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm" title="Don't save questions or answers from this call">
+            <input type="checkbox" checked={privateMode} onChange={(e) => setPrivateMode(e.target.checked)} className="size-4 accent-[var(--accent)]" />
+            <EyeOff className="size-4 text-muted" /> Private
+          </label>
+          <button type="button" onClick={endAndDebrief} disabled={debrief?.loading} className="btn-secondary">
+            {debrief?.loading ? <Loader2 className="size-4 animate-spin" /> : <ClipboardCheck className="size-4" />} End &amp; debrief
+          </button>
+        </div>
+        <p className="text-xs text-muted">
+          Suggestions appear only on your device and are never sent into the meeting.{" "}
+          {privateMode ? "Private mode is on, so nothing from this call is saved." : "Questions and answers are saved to this interview's history (only you can see them)."}
+        </p>
+
         {captureError && <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{captureError}</p>}
         {error && <ErrorNotice error={error} onRetry={() => { setError(null); void answerNow(); }} />}
       </div>
+
+      {debrief && (
+        <div className="space-y-3">
+          {debrief.loading && (
+            <div className="card flex items-center gap-2 p-5 text-sm text-muted">
+              <Loader2 className="size-4 animate-spin text-accent" /> Writing your debrief…
+            </div>
+          )}
+          {debrief.error && <ErrorNotice error={debrief.error} onRetry={endAndDebrief} />}
+          {debrief.data && <DebriefView debrief={debrief.data} />}
+        </div>
+      )}
+
+      {screen && (
+        <div className="card overflow-hidden" aria-live="polite">
+          <div className="flex items-center justify-between border-b border-border bg-surface-2/60 px-4 py-2">
+            <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted">
+              {screen.streaming ? <Loader2 className="size-3.5 animate-spin text-accent" /> : <ScanText className="size-3.5 text-accent" />} Screen Help
+            </span>
+            <button type="button" className="btn-ghost px-2 py-1 text-xs" onClick={() => setScreen(null)}>Close</button>
+          </div>
+          <div className="p-4 sm:p-5">
+            {screen.error ? (
+              <ErrorNotice error={screen.error} onRetry={() => void screenHelp()} />
+            ) : screen.text ? (
+              <Markdown text={screen.text} />
+            ) : (
+              <p className="text-sm text-muted">Reading your screen…</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Answer + transcript */}
       <div className="grid gap-5 lg:grid-cols-[1fr_300px]">

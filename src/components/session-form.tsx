@@ -43,6 +43,18 @@ export function SessionForm({
         </div>
       </div>
       <div>
+        <label htmlFor="interview_type" className="label">Interview format</label>
+        <select id="interview_type" name="interview_type" className="input" defaultValue={session?.interview_type ?? "general"}>
+          <option value="general">General / mixed</option>
+          <option value="behavioral">Behavioural</option>
+          <option value="technical">Technical</option>
+          <option value="coding">Coding</option>
+          <option value="system_design">System design</option>
+          <option value="case_study">Case study</option>
+          <option value="one_way_video">One-way video (HireVue etc.)</option>
+        </select>
+      </div>
+      <div>
         <label htmlFor="meeting_url" className="label">Meeting link <span className="font-normal text-muted">(Zoom, Teams or Google Meet, optional)</span></label>
         <input id="meeting_url" name="meeting_url" type="url" inputMode="url" maxLength={2000} className="input" defaultValue={session?.meeting_url ?? ""} placeholder="https://meet.google.com/abc-defg-hij" />
       </div>

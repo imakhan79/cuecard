@@ -5,6 +5,7 @@ import { contextBlock, mockInterviewerSystem } from "@/lib/ai/prompts";
 import { loadInterviewContext } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
 import type { MockInterview, MockTurn } from "@/lib/types";
+import { loadWeakSpots } from "@/lib/weak-spots";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -79,6 +80,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         transcript.length && transcript[transcript.length - 2]?.tag === "F" ? " You just asked a follow-up, so move on to a new main question." : ""
       }`;
 
+  // Re-drill: collect weak spots from earlier debriefs and mock reports for this interview.
+  let weakSpots: string[] | undefined;
+  if (mock.kind === "redrill") weakSpots = await loadWeakSpots(supabase, mock.session_id);
+
   // Interviewer turns are the assistant; candidate turns are the user.
   const messages: Anthropic.Beta.BetaMessageParam[] = [
     { role: "user", content: "(The candidate has joined the call.)" },
@@ -105,7 +110,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         output_config: { effort: "low" },
         ...FALLBACK,
         system: [
-          { type: "text", text: mockInterviewerSystem(mock.kind, mock.question_count) },
+          { type: "text", text: mockInterviewerSystem(mock.kind, mock.question_count, weakSpots) },
           { type: "text", text: contextBlock(loaded.context), cache_control: { type: "ephemeral" } },
         ],
         messages,

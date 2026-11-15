@@ -28,6 +28,8 @@ const Body = z.union([
     mode: z.literal("copilot"),
     sessionId: z.uuid(),
     transcript: z.string().trim().min(1).max(20000),
+    /** Private mode: don't save the detected question or answer. */
+    save: z.boolean().default(true),
   }),
 ]);
 
@@ -127,6 +129,10 @@ export async function POST(req: Request) {
           }
           question = split.question;
           answer = split.answer;
+          if (input.mode === "copilot" && !input.save) {
+            send({ type: "done", questionId: null, private: true });
+            return;
+          }
         }
         if (questionId) {
           await supabase.from("questions").update({ suggested_answer: answer }).eq("id", questionId);

@@ -43,6 +43,46 @@ export async function postJson<T>(url: string, body: unknown, signal?: AbortSign
   return (await res.json()) as T;
 }
 
+/** POSTs FormData to an NDJSON endpoint (e.g. Screen Help), streaming text chunks. */
+export async function streamForm(url: string, form: FormData, onText: (chunk: string) => void, signal?: AbortSignal) {
+  let res: Response;
+  try {
+    res = await fetch(url, { method: "POST", body: form, signal });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw e;
+    throw networkError();
+  }
+  if (!res.ok || !res.body) throw await readError(res);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let done = false;
+  const handle = (raw: string) => {
+    if (!raw.trim()) return;
+    const ev = JSON.parse(raw) as { type: string; text?: string; error?: AiError };
+    if (ev.type === "text" && ev.text) onText(ev.text);
+    else if (ev.type === "done") done = true;
+    else if (ev.type === "error" && ev.error) throw new AiRequestError(ev.error);
+  };
+  try {
+    while (true) {
+      const { value, done: finished } = await reader.read();
+      if (finished) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        handle(buffer.slice(0, nl));
+        buffer = buffer.slice(nl + 1);
+      }
+    }
+    handle(buffer);
+  } catch (e) {
+    if (e instanceof AiRequestError || (e as Error).name === "AbortError") throw e;
+    throw networkError();
+  }
+  if (!done) throw networkError();
+}
+
 /** Streams one mock-interview interviewer turn. Resolves with whether the interview has ended. */
 export async function streamMockTurn(
   mockId: string,
@@ -102,7 +142,7 @@ type StreamEvent =
 
 type AnswerBody =
   | { mode?: "question"; sessionId: string; question: string; questionId?: string }
-  | { mode: "copilot"; sessionId: string; transcript: string };
+  | { mode: "copilot"; sessionId: string; transcript: string; save?: boolean };
 
 /**
  * Calls /api/answer and invokes onText for every streamed chunk.

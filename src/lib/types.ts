@@ -28,12 +28,40 @@ export const MockReportSchema = z.object({
 });
 export type MockReport = z.infer<typeof MockReportSchema>;
 
+export type MockKind =
+  | "behavioral"
+  | "technical"
+  | "mixed"
+  | "coding"
+  | "system_design"
+  | "product_case"
+  | "case_study"
+  | "salary_negotiation"
+  | "redrill";
+
+export const PrepSchema = z.object({
+  requirements: z.array(z.object({ requirement: z.string(), coverage: z.enum(["strong", "partial", "missing"]), evidence: z.string() })),
+  checklist: z.array(z.object({ id: z.string(), task: z.string(), category: z.string() })),
+  likely_topics: z.array(z.string()),
+});
+export type Prep = z.infer<typeof PrepSchema>;
+
+export const DebriefSchema = z.object({
+  readiness: z.number().min(1).max(10),
+  summary: z.string(),
+  worked: z.array(z.string()),
+  weak_spots: z.array(z.string()),
+  next_steps: z.array(z.string()),
+  questions_seen: z.array(z.string()),
+});
+export type Debrief = z.infer<typeof DebriefSchema>;
+
 export type MockTurn = { role: "interviewer" | "candidate"; text: string; tag?: "Q" | "F" | "END"; at: string };
 
 export type MockInterview = {
   id: string;
   session_id: string;
-  kind: "behavioral" | "technical" | "mixed";
+  kind: MockKind;
   question_count: number;
   status: "in_progress" | "completed";
   transcript: MockTurn[];
@@ -58,6 +86,9 @@ export type InterviewSession = {
   role: string | null;
   job_description: string | null;
   meeting_url: string | null;
+  interview_type?: string | null;
+  prep?: Prep | null;
+  prep_checked?: string[];
   resume_id: string | null;
   created_at: string;
 };

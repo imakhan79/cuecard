@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   const audio = form?.get("audio");
   if (!(audio instanceof File) || audio.size === 0) return jsonError(400, "bad_request", "No audio received.");
   if (audio.size > MAX_BYTES) return jsonError(400, "bad_request", "Audio clip too large.");
-  const lang = String(form?.get("lang") || "en").slice(0, 10);
+  const lang = String(form?.get("lang") || "auto").slice(0, 10);
 
   const deepgram = process.env.DEEPGRAM_API_KEY;
   const openai = process.env.OPENAI_API_KEY;
@@ -37,7 +37,9 @@ export async function POST(req: Request) {
       const url = new URL("https://api.deepgram.com/v1/listen");
       url.searchParams.set("model", "nova-3");
       url.searchParams.set("smart_format", "true");
-      url.searchParams.set("language", lang.split("-")[0] || "en");
+      // Auto-detect the spoken language (Deepgram supports 30+; set lang to force one).
+      if (lang === "auto") url.searchParams.set("detect_language", "true");
+      else url.searchParams.set("language", lang.split("-")[0] || "en");
       res = await fetch(url, {
         method: "POST",
         headers: { Authorization: `Token ${deepgram}`, "Content-Type": audio.type || "audio/webm" },
@@ -48,7 +50,7 @@ export async function POST(req: Request) {
       const body = new FormData();
       body.append("file", audio, "clip.webm");
       body.append("model", "gpt-4o-mini-transcribe");
-      body.append("language", lang.split("-")[0] || "en");
+      if (lang !== "auto") body.append("language", lang.split("-")[0] || "en");
       res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
         method: "POST",
         headers: { Authorization: `Bearer ${openai}` },

@@ -10,12 +10,19 @@ const KINDS = [
   { id: "mixed", label: "Mixed", hint: "Like a real first round" },
   { id: "behavioral", label: "Behavioural", hint: "Teamwork, conflict, impact" },
   { id: "technical", label: "Role-specific", hint: "Skills from the job post" },
+  { id: "coding", label: "Coding", hint: "Talk through algorithms" },
+  { id: "system_design", label: "System design", hint: "Architecture & trade-offs" },
+  { id: "product_case", label: "Product case", hint: "Product sense & metrics" },
+  { id: "case_study", label: "Case study", hint: "Consulting-style business case" },
+  { id: "salary_negotiation", label: "Salary negotiation", hint: "Role-play the offer call" },
 ] as const;
 
 export function MockPanel({
   sessionId,
   mocks,
+  canRedrill = false,
 }: {
+  canRedrill?: boolean;
   sessionId: string;
   mocks: Pick<MockInterview, "id" | "kind" | "question_count" | "status" | "overall_score" | "created_at">[];
 }) {
@@ -41,7 +48,7 @@ export function MockPanel({
 
         <fieldset>
           <legend className="label">Interview type</legend>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {KINDS.map((k, i) => (
               <label key={k.id} className="flex cursor-pointer flex-col rounded-xl border border-border p-3 transition has-[:checked]:border-accent has-[:checked]:bg-accent-soft">
                 <input type="radio" name="kind" value={k.id} defaultChecked={i === 0} className="sr-only" />
@@ -49,6 +56,13 @@ export function MockPanel({
                 <span className="text-xs text-muted">{k.hint}</span>
               </label>
             ))}
+            <label className={`col-span-2 flex flex-col rounded-xl border border-dashed p-3 transition sm:col-span-4 has-[:checked]:border-accent has-[:checked]:bg-accent-soft ${canRedrill ? "cursor-pointer border-accent/50" : "cursor-not-allowed border-border opacity-60"}`}>
+              <input type="radio" name="kind" value="redrill" disabled={!canRedrill} className="sr-only" />
+              <span className="text-sm font-semibold">Re-drill weak spots</span>
+              <span className="text-xs text-muted">
+                {canRedrill ? "Replays the weak spots from your debriefs, mock reports and low practice scores." : "Unlocks after a debrief, a finished mock, or a low practice score."}
+              </span>
+            </label>
           </div>
         </fieldset>
 

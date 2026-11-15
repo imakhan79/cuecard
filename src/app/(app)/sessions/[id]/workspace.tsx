@@ -10,6 +10,7 @@ import {
   FileText,
   Headphones,
   Headset,
+  ListChecks,
   History,
   Loader2,
   MessageSquareText,
@@ -24,6 +25,7 @@ import {
 import { CopilotPanel } from "@/components/copilot/copilot-panel";
 import { ErrorNotice } from "@/components/error-notice";
 import { MockPanel } from "@/components/mock/mock-panel";
+import { PrepPanel, type DebriefRow } from "@/components/prep-panel";
 import { Markdown } from "@/components/markdown";
 import { MicButton } from "@/components/mic-button";
 import { SessionForm } from "@/components/session-form";
@@ -32,7 +34,7 @@ import type { AiError } from "@/lib/ai/errors";
 import type { Answer, InterviewSession, MockInterview, Question, Resume } from "@/lib/types";
 import { deleteQuestion, deleteSession, updateSession } from "../../actions";
 
-type Tab = "copilot" | "mock" | "live" | "practice" | "history";
+type Tab = "copilot" | "prep" | "mock" | "live" | "practice" | "history";
 
 function toAiError(e: unknown): AiError | null {
   if ((e as Error)?.name === "AbortError") return null;
@@ -45,7 +47,9 @@ export function Workspace({
   resumes,
   resumeTitle,
   mocks,
+  debriefs,
 }: {
+  debriefs: DebriefRow[];
   session: InterviewSession;
   questions: Question[];
   mocks: Pick<MockInterview, "id" | "kind" | "question_count" | "status" | "overall_score" | "created_at">[];
@@ -59,6 +63,7 @@ export function Workspace({
 
   const tabs: { id: Tab; label: string; icon: typeof Radio; count?: number }[] = [
     { id: "copilot", label: "Copilot", icon: Headphones },
+    { id: "prep", label: "Prep", icon: ListChecks },
     { id: "mock", label: "Mock", icon: Headset, count: mocks.length },
     { id: "live", label: "Type", icon: Radio },
     { id: "practice", label: "Practice", icon: Sparkles, count: practice.length },
@@ -144,7 +149,8 @@ export function Workspace({
 
       <div className="mt-6">
         {tab === "copilot" && <CopilotPanel sessionId={session.id} meetingUrl={session.meeting_url} />}
-        {tab === "mock" && <MockPanel sessionId={session.id} mocks={mocks} />}
+        {tab === "prep" && <PrepPanel session={session} debriefs={debriefs} />}
+        {tab === "mock" && <MockPanel sessionId={session.id} mocks={mocks} canRedrill={debriefs.length > 0 || mocks.some((m) => m.status === "completed") || questions.some((q) => q.answers?.some((a) => (a.score ?? 10) <= 6))} />}
         {tab === "live" && <LivePanel sessionId={session.id} />}
         {tab === "practice" && <PracticePanel sessionId={session.id} questions={practice} />}
         {tab === "history" && <HistoryPanel sessionId={session.id} questions={questions} />}

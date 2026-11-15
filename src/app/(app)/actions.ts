@@ -68,6 +68,9 @@ const SessionInput = z.object({
   company: opt(200),
   role: opt(200),
   job_description: opt(50000),
+  interview_type: z
+    .enum(["general", "behavioral", "technical", "coding", "system_design", "case_study", "one_way_video"])
+    .catch("general"),
   meeting_url: z
     .string()
     .trim()
@@ -88,6 +91,7 @@ function sessionFields(form: FormData) {
     company: form.get("company"),
     role: form.get("role"),
     job_description: form.get("job_description"),
+    interview_type: form.get("interview_type"),
     meeting_url: form.get("meeting_url") ?? "",
     resume_id: form.get("resume_id") ?? "",
   });
@@ -122,6 +126,7 @@ export async function startLiveInterview(_: ActionState, form: FormData): Promis
     company,
     role,
     job_description: form.get("job_description"),
+    interview_type: form.get("interview_type"),
     meeting_url: form.get("meeting_url") ?? "",
     resume_id: form.get("resume_id") ?? "",
   });
@@ -170,7 +175,7 @@ export async function deleteQuestion(id: string, sessionId: string) {
 
 const MockInput = z.object({
   session_id: z.uuid(),
-  kind: z.enum(["behavioral", "technical", "mixed"]),
+  kind: z.enum(["behavioral", "technical", "mixed", "coding", "system_design", "product_case", "case_study", "salary_negotiation", "redrill"]),
   question_count: z.coerce.number().int().min(2).max(12),
 });
 
@@ -197,6 +202,33 @@ export async function deleteMock(id: string, sessionId: string) {
   const { supabase } = await requireUser();
   await supabase.from("mock_interviews").delete().eq("id", z.uuid().parse(id));
   revalidatePath(`/sessions/${sessionId}`);
+}
+
+/** Ticks or unticks a prep checklist item. */
+export async function togglePrepItem(sessionId: string, itemId: string, done: boolean) {
+  const { supabase } = await requireUser();
+  const { data } = await supabase
+    .from("interview_sessions")
+    .select("prep_checked")
+    .eq("id", z.uuid().parse(sessionId))
+    .maybeSingle<{ prep_checked: string[] }>();
+  if (!data) return;
+  const set = new Set(data.prep_checked ?? []);
+  if (done) set.add(itemId);
+  else set.delete(itemId);
+  await supabase.from("interview_sessions").update({ prep_checked: [...set] }).eq("id", sessionId);
+  revalidatePath(`/sessions/${sessionId}`);
+}
+
+/** Saves an uploaded resume (text already extracted in the browser / by /api/resume-extract) and returns its id. */
+export async function quickSaveResume(title: string, content: string): Promise<{ id?: string; error?: string }> {
+  const parsed = ResumeInput.safeParse({ title: title || "My resume", content });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const { supabase, user } = await requireUser();
+  const { data, error } = await supabase.from("resumes").insert({ ...parsed.data, user_id: user.id }).select("id").single();
+  if (error || !data) return { error: "Couldn't save the resume." };
+  revalidatePath("/resumes");
+  return { id: data.id };
 }
 
 // ---------- Auth ----------

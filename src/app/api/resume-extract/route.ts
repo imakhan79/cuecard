@@ -6,19 +6,35 @@ export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const MAX_BYTES = 10 * 1024 * 1024;
+const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-/** Extracts the text of an uploaded PDF resume, verbatim. (.txt/.md files are read in the browser.) */
+/** Extracts resume text from a PDF (via Claude, verbatim) or a Word .docx file. (.txt/.md are read in the browser.) */
 export async function POST(req: Request) {
   const { user } = await getUser();
   if (!user) return jsonError(401, "unauthorized", "Please sign in again.");
 
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
-  if (!(file instanceof File)) return jsonError(400, "bad_request", "Choose a PDF file.");
-  if (file.type !== "application/pdf") return jsonError(400, "bad_request", "Only PDF files can be extracted.");
-  if (file.size > MAX_BYTES) return jsonError(400, "bad_request", "PDF must be 10 MB or smaller.");
+  if (!(file instanceof File)) return jsonError(400, "bad_request", "Choose a PDF or Word file.");
+  if (file.size > MAX_BYTES) return jsonError(400, "bad_request", "File must be 10 MB or smaller.");
+  const name = file.name.toLowerCase();
+  const buffer = Buffer.from(await file.arrayBuffer());
 
-  const data = Buffer.from(await file.arrayBuffer()).toString("base64");
+  if (file.type === DOCX || name.endsWith(".docx")) {
+    try {
+      const mammoth = await import("mammoth");
+      const { value } = await mammoth.extractRawText({ buffer });
+      const text = value.replace(/\n{3,}/g, "\n\n").trim();
+      if (!text) return jsonError(422, "bad_request", "No text found in that Word file.");
+      return Response.json({ text });
+    } catch {
+      return jsonError(422, "bad_request", "Couldn't read that Word file. Try saving it as PDF.");
+    }
+  }
+
+  if (file.type !== "application/pdf" && !name.endsWith(".pdf")) {
+    return jsonError(400, "bad_request", "Upload a PDF, Word (.docx), .txt or .md file.");
+  }
 
   try {
     const message = await getClaude()
@@ -32,7 +48,7 @@ export async function POST(req: Request) {
             {
               role: "user",
               content: [
-                { type: "document", source: { type: "base64", media_type: "application/pdf", data } },
+                { type: "document", source: { type: "base64", media_type: "application/pdf", data: buffer.toString("base64") } },
                 {
                   type: "text",
                   text: "Transcribe this resume to plain text, verbatim. Keep every section, heading, date and bullet. Do not summarize, rephrase, correct or add anything. Output only the resume text.",

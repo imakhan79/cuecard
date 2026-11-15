@@ -9,6 +9,7 @@ export type SessionRow = {
   role: string | null;
   job_description: string | null;
   resume_id: string | null;
+  interview_type: string | null;
   created_at: string;
 };
 
@@ -19,7 +20,7 @@ export async function loadInterviewContext(
 ): Promise<{ session: SessionRow; context: InterviewContext } | null> {
   const { data: session } = await supabase
     .from("interview_sessions")
-    .select("id, title, company, role, job_description, resume_id, created_at")
+    .select("id, title, company, role, job_description, resume_id, interview_type, created_at")
     .eq("id", sessionId)
     .maybeSingle<SessionRow>();
   if (!session) return null;
@@ -41,6 +42,7 @@ export async function loadInterviewContext(
       company: session.company,
       role: session.role,
       jobDescription: session.job_description,
+      interviewType: session.interview_type,
     },
   };
 }

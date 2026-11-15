@@ -85,15 +85,16 @@ function ResumeEditor({ resume, onClose }: { resume?: Resume; onClose: () => voi
     setUploadError(null);
     if (!title) setTitle(file.name.replace(/\.[^.]+$/, ""));
 
-    if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+    const lower = file.name.toLowerCase();
+    if (file.type === "application/pdf" || lower.endsWith(".pdf") || lower.endsWith(".docx")) {
       setExtracting(true);
       try {
         const form = new FormData();
-        form.append("file", new File([file], file.name, { type: "application/pdf" }));
+        form.append("file", file);
         const { text } = await postJson<{ text: string }>("/api/resume-extract", form);
         setContent(text);
       } catch (e) {
-        setUploadError(e instanceof AiRequestError ? e.error : { code: "unknown", message: "Couldn't read that PDF." });
+        setUploadError(e instanceof AiRequestError ? e.error : { code: "unknown", message: "Couldn't read that file." });
       } finally {
         setExtracting(false);
       }
@@ -107,7 +108,7 @@ function ResumeEditor({ resume, onClose }: { resume?: Resume; onClose: () => voi
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">{resume ? "Edit resume" : "New resume"}</h2>
-          <p className="text-sm text-muted">Paste the text, or upload a PDF, .txt or .md file.</p>
+          <p className="text-sm text-muted">Paste the text, or upload a PDF, Word (.docx), .txt or .md file.</p>
         </div>
         <button type="button" onClick={onClose} className="btn-ghost size-9 p-0" aria-label="Close">
           <X className="size-4" />
@@ -125,12 +126,12 @@ function ResumeEditor({ resume, onClose }: { resume?: Resume; onClose: () => voi
           <label htmlFor="r-content" className="label mb-0">Resume text</label>
           <button type="button" onClick={() => fileInput.current?.click()} disabled={extracting} className="btn-secondary px-3 py-1.5 text-xs">
             {extracting ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
-            {extracting ? "Reading PDF…" : "Upload file"}
+            {extracting ? "Reading file…" : "Upload file"}
           </button>
           <input
             ref={fileInput}
             type="file"
-            accept=".pdf,.txt,.md,application/pdf,text/plain,text/markdown"
+            accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];

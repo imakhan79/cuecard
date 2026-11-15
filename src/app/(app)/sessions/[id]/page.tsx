@@ -13,10 +13,10 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   if (!UUID.test(id)) notFound();
 
   const { supabase } = await getUser();
-  const [{ data: session }, { data: questions }, { data: resumes }, { data: mocks }] = await Promise.all([
+  const [{ data: session }, { data: questions }, { data: resumes }, { data: mocks }, { data: debriefs }] = await Promise.all([
     supabase
       .from("interview_sessions")
-      .select("id, title, company, role, job_description, meeting_url, resume_id, created_at")
+      .select("id, title, company, role, job_description, meeting_url, interview_type, prep, prep_checked, resume_id, created_at")
       .eq("id", id)
       .maybeSingle<InterviewSession>(),
     supabase
@@ -32,6 +32,12 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
       .select("id, kind, question_count, status, overall_score, created_at")
       .eq("session_id", id)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("debriefs")
+      .select("id, source, readiness, report, created_at")
+      .eq("session_id", id)
+      .order("created_at", { ascending: false })
+      .limit(5),
   ]);
 
   if (!session) notFound();
@@ -44,6 +50,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
       resumes={resumes ?? []}
       resumeTitle={resumeTitle}
       mocks={mocks ?? []}
+      debriefs={debriefs ?? []}
     />
   );
 }

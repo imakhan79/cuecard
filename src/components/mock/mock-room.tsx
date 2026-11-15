@@ -166,7 +166,7 @@ export function MockRoom({ mock, title }: { mock: MockInterview; title: string }
         </Link>
         <div>
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Mock interview report</h1>
-          <p className="mt-1 text-sm capitalize text-muted">{mock.kind} · {answered} answers</p>
+          <p className="mt-1 text-sm capitalize text-muted">{mock.kind.replace("_", " ")} · {answered} answers</p>
         </div>
         <MockReportView report={report} />
         <details className="card overflow-hidden">
@@ -193,7 +193,7 @@ export function MockRoom({ mock, title }: { mock: MockInterview; title: string }
           <ArrowLeft className="size-4" /> {title}
         </Link>
         <span className="text-sm capitalize text-muted">
-          {mock.kind} · question {Math.min(asked || 1, mock.question_count)} of ~{mock.question_count}
+          {mock.kind.replace("_", " ")} · question {Math.min(asked || 1, mock.question_count)} of ~{mock.question_count}
         </span>
       </div>
 

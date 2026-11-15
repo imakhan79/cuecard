@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileText, LayoutGrid, Radio } from "lucide-react";
+import { BookOpen, FileText, LayoutGrid, Radio } from "lucide-react";
 
 const LINKS = [
   { href: "/live", label: "Live Interview", icon: Radio, match: ["/live"] },
   { href: "/dashboard", label: "Interviews", icon: LayoutGrid, match: ["/dashboard", "/sessions", "/mock"] },
+  { href: "/questions", label: "Question Bank", icon: BookOpen, match: ["/questions"] },
   { href: "/resumes", label: "Resumes", icon: FileText, match: ["/resumes"] },
 ];
 

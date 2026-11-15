@@ -37,6 +37,14 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
   }, [onClip, onVoiceStart]);
 
   const cleanup = useRef<(() => void) | null>(null);
+  const video = useRef<HTMLVideoElement | null>(null);
+
+  /** Grabs the current frame of the shared tab/screen as a JPEG (for Screen Help). */
+  const grabFrame = useCallback(async (): Promise<Blob | null> => {
+    const v = video.current;
+    if (!v || !v.videoWidth) return null;
+    return frameToJpeg(v);
+  }, []);
 
   const stop = useCallback(() => {
     cleanup.current?.();
@@ -70,6 +78,13 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
       );
       return;
     }
+
+    const v = document.createElement("video");
+    v.muted = true;
+    v.playsInline = true;
+    v.srcObject = new MediaStream(display.getVideoTracks());
+    v.play().catch(() => {});
+    video.current = v;
 
     const audioTracks = display.getAudioTracks();
     if (!audioTracks.length) {
@@ -160,11 +175,56 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
         recorder.stop();
       }
       ctx.close().catch(() => {});
+      v.srcObject = null;
+      video.current = null;
     };
     setActive(true);
   }, [stop]);
 
   useEffect(() => () => cleanup.current?.(), []);
 
-  return { active, speaking, level, error, start, stop };
+  /** Small fingerprint of the shared screen, for change detection. */
+  const signature = useCallback(() => (video.current ? frameSignature(video.current) : null), []);
+
+  return { active, speaking, level, error, start, stop, grabFrame, signature };
+}
+
+/** Draws a video frame to a canvas (max 1600px wide) and encodes it as JPEG. */
+export function frameToJpeg(v: HTMLVideoElement): Promise<Blob | null> {
+  const scale = Math.min(1, 1600 / v.videoWidth);
+  const c = document.createElement("canvas");
+  c.width = Math.round(v.videoWidth * scale);
+  c.height = Math.round(v.videoHeight * scale);
+  c.getContext("2d")?.drawImage(v, 0, 0, c.width, c.height);
+  return new Promise((r) => c.toBlob((b) => r(b), "image/jpeg", 0.85));
+}
+
+/** One-off screenshot: asks the user to pick a tab/window/screen, grabs one frame, stops sharing. */
+export async function captureScreenOnce(): Promise<Blob | null> {
+  const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+  try {
+    const v = document.createElement("video");
+    v.muted = true;
+    v.srcObject = stream;
+    await v.play();
+    await new Promise((r) => setTimeout(r, 300));
+    return await frameToJpeg(v);
+  } finally {
+    stream.getTracks().forEach((t) => t.stop());
+  }
+}
+
+/** Tiny 24x24 grayscale fingerprint of a frame, used to detect when the screen content changes. */
+export function frameSignature(v: HTMLVideoElement): Uint8ClampedArray | null {
+  if (!v.videoWidth) return null;
+  const c = document.createElement("canvas");
+  c.width = 24;
+  c.height = 24;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  if (!g) return null;
+  g.drawImage(v, 0, 0, 24, 24);
+  const d = g.getImageData(0, 0, 24, 24).data;
+  const out = new Uint8ClampedArray(576);
+  for (let i = 0; i < 576; i++) out[i] = (d[i * 4] + d[i * 4 + 1] + d[i * 4 + 2]) / 3;
+  return out;
 }
