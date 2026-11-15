@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Briefcase, ChevronRight, MessageSquareText } from "lucide-react";
+import { Briefcase, ChevronRight, MessageSquareText, Radio } from "lucide-react";
 import { getUser } from "@/lib/supabase/server";
 import { SessionForm } from "@/components/session-form";
 import { createSession } from "../actions";
@@ -32,6 +32,17 @@ export default async function DashboardPage() {
       <section>
         <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Your interviews</h1>
         <p className="mt-1 text-muted">Open an interview to get live answers or practise.</p>
+
+        <Link href="/live" className="group mt-6 flex items-center gap-4 rounded-2xl bg-accent p-5 text-accent-fg shadow-sm transition hover:brightness-110">
+          <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-white/15">
+            <Radio className="size-6" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-lg font-semibold">Start Live Interview Assistance</span>
+            <span className="block text-sm opacity-85">Real-time answers in Zoom, Teams or Google Meet</span>
+          </span>
+          <ChevronRight className="size-6 transition group-hover:translate-x-1" />
+        </Link>
 
         <div className="mt-6 space-y-3">
           {!sessions?.length && (

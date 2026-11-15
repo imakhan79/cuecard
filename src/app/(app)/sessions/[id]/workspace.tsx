@@ -82,6 +82,10 @@ export function Workspace({
             </span>
           </p>
         </div>
+        <Link href={`/live/${session.id}`} className="btn-primary shrink-0 px-3">
+          <Radio className="size-4" />
+          <span className="hidden sm:inline">Go live</span>
+        </Link>
         <button
           type="button"
           onClick={() => setShowDetails((v) => !v)}

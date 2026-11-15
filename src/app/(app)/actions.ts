@@ -110,6 +110,35 @@ export async function createSession(_: ActionState, form: FormData): Promise<Act
   redirect(`/sessions/${data.id}`);
 }
 
+/** Quick launch for Live Interview Assistance: creates an interview and opens the live assistant. */
+export async function startLiveInterview(_: ActionState, form: FormData): Promise<ActionState> {
+  const company = String(form.get("company") ?? "").trim();
+  const role = String(form.get("role") ?? "").trim();
+  const date = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const title = `${[company, role].filter(Boolean).join(": ") || "Live interview"} (${date})`.slice(0, 200);
+
+  const parsed = SessionInput.safeParse({
+    title,
+    company,
+    role,
+    job_description: form.get("job_description"),
+    meeting_url: form.get("meeting_url") ?? "",
+    resume_id: form.get("resume_id") ?? "",
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const { supabase, user } = await requireUser();
+
+  const { data, error } = await supabase
+    .from("interview_sessions")
+    .insert({ ...parsed.data, id: undefined, user_id: user.id })
+    .select("id")
+    .single();
+  if (error || !data) return { error: "Couldn't start the live interview. Please try again." };
+
+  revalidatePath("/dashboard");
+  redirect(`/live/${data.id}`);
+}
+
 export async function updateSession(_: ActionState, form: FormData): Promise<ActionState> {
   const parsed = sessionFields(form);
   if (!parsed.success || !parsed.data.id) return { error: parsed.error?.issues[0].message ?? "Missing id." };
