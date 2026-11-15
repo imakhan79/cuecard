@@ -13,8 +13,8 @@ type Options = {
 
 const MIN_VOICE_RMS = 0.004; // absolute floor for the adaptive speech threshold
 const NO_SIGNAL_MS = 8000; // warn if the shared tab is completely silent this long
-const PAUSE_MS = 750; // silence that ends an utterance
-const MIN_CLIP_MS = 600;
+const PAUSE_MS = 1000; // silence that ends an utterance (long enough to keep sentences whole)
+const MIN_CLIP_MS = 800;
 const MAX_CLIP_MS = 20000;
 
 /** Concatenates PCM chunks and resamples to `outRate` (box filter). */

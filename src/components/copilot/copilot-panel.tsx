@@ -187,8 +187,10 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
   /* ---------------- meeting audio ---------------- */
 
   // Listening engine: on-device Whisper (free, unlimited, private) or cloud (Gemini/Deepgram/OpenAI).
-  const [engine, setEngine] = useState<"device" | "cloud">("device");
-  const engineRef = useRef<"device" | "cloud">("device");
+  // auto = accurate cloud transcription, switching to on-device whenever the cloud is rate limited.
+  const [engine, setEngine] = useState<"auto" | "device" | "cloud">("auto");
+  const engineRef = useRef<"auto" | "device" | "cloud">("auto");
+  const [usingDevice, setUsingDevice] = useState(false);
   useEffect(() => {
     engineRef.current = engine;
   }, [engine]);
@@ -205,7 +207,6 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
             addLine(await localTranscribe(pcm, langRef.current));
             return;
           }
-          // Cloud: retry rate-limited clips quietly (free tiers have per-minute caps).
           for (let attempt = 0; ; attempt++) {
             try {
               const form = new FormData();
@@ -213,9 +214,18 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
               form.append("lang", langRef.current);
               const { text } = await postJson<{ text: string }>("/api/transcribe", form);
               addLine(text);
+              setUsingDevice(false);
               return;
             } catch (e) {
-              if (e instanceof AiRequestError && e.error.code === "rate_limit" && attempt < 3) {
+              const code = e instanceof AiRequestError ? e.error.code : "network";
+              // Auto: never stall. Hand the clip to the on-device model straight away.
+              if (engineRef.current === "auto" && ["rate_limit", "invalid_key", "network", "overloaded", "unknown"].includes(code)) {
+                setUsingDevice(true);
+                addLine(await localTranscribe(pcm, langRef.current));
+                return;
+              }
+              // Cloud only: retry rate-limited clips quietly.
+              if (code === "rate_limit" && attempt < 3) {
                 await new Promise((r) => setTimeout(r, 3000 * (attempt + 1)));
                 continue;
               }
@@ -252,7 +262,7 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
   const start = async () => {
     setError(null);
     if (source === "meeting") {
-      if (engine === "device") void whisper.load(); // downloads once, then cached
+      if (engine !== "cloud") void whisper.load(); // downloads once in the background, then cached
       await meeting.start();
     } else {
       speech.start();
@@ -451,8 +461,9 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
             <div role="radiogroup" aria-label="Listening engine" className="inline-flex gap-1 rounded-lg bg-surface-2 p-1">
               {(
                 [
-                  { id: "device", label: "On-device · free, unlimited" },
-                  { id: "cloud", label: "Cloud · faster" },
+                  { id: "auto", label: "Auto · accurate + unlimited" },
+                  { id: "cloud", label: "Cloud only" },
+                  { id: "device", label: "On-device only" },
                 ] as const
               ).map((o) => (
                 <button
@@ -467,6 +478,11 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
                 </button>
               ))}
             </div>
+            {engine === "auto" && isRunning && (
+              <span className={`text-xs ${usingDevice ? "text-warn" : "text-muted"}`}>
+                {usingDevice ? "Cloud busy, using on-device model" : "Using accurate cloud model"}
+              </span>
+            )}
             {engine === "device" && whisper.status === "loading" && (
               <span className="inline-flex items-center gap-1.5 text-xs text-muted">
                 <Loader2 className="size-3.5 animate-spin" />
