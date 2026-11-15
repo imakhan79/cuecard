@@ -2,6 +2,8 @@ import Link from "next/link";
 import { FileText, MessagesSquare, Mic, ShieldCheck, Sparkles, Target } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme";
+import { DemoButton } from "@/components/demo-button";
+import { isDemoEnabled } from "./(auth)/demo-actions";
 
 const FEATURES = [
   { icon: Mic, title: "Live answers", body: "Type or speak the interviewer's question and get a spoken-style answer streamed in seconds." },
@@ -12,7 +14,8 @@ const FEATURES = [
   { icon: ShieldCheck, title: "Private by design", body: "Row Level Security on every table. Only you can see your resumes, sessions and answers." },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const demo = await isDemoEnabled();
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
@@ -38,8 +41,13 @@ export default function Home() {
           </p>
           <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
             <Link href="/signup" className="btn-primary px-6 py-3 text-base">Start preparing</Link>
-            <Link href="/login" className="btn-secondary px-6 py-3 text-base">I have an account</Link>
+            {demo ? (
+              <DemoButton className="btn-secondary w-full px-6 py-3 text-base sm:w-auto" label="Try the demo" />
+            ) : (
+              <Link href="/login" className="btn-secondary px-6 py-3 text-base">I have an account</Link>
+            )}
           </div>
+          {demo && <p className="mt-3 text-sm text-muted">One click, no sign-up: opens a sample account with a resume and interview ready to go.</p>}
         </section>
 
         <section className="mx-auto max-w-6xl px-4 pb-24 sm:px-6">

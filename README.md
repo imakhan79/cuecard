@@ -62,6 +62,10 @@ You can also run it with psql (use the Session pooler connection string from Sup
 psql "postgresql://postgres.<project-ref>:<password>@aws-<n>-<region>.pooler.supabase.com:5432/postgres" -f supabase/schema.sql
 ```
 
+### Optional: one-click demo account
+
+Run [`supabase/demo.sql`](supabase/demo.sql) in the SQL Editor. It creates `demo@cuecard.app` with a sample resume and interview. It also adds a trigger that stops visitors changing the demo account's email or password. Then set `DEMO_EMAIL` and `DEMO_PASSWORD` (server-only) in `.env.local` and on Vercel. A **Try the demo** button appears on the landing and login pages. Everyone shares the demo account, and each AI call it makes is billed to your Anthropic key.
+
 ### 5. Auth settings
 
 In Supabase → **Authentication → URL Configuration**:
