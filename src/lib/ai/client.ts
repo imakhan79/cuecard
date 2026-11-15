@@ -43,6 +43,58 @@ export async function postJson<T>(url: string, body: unknown, signal?: AbortSign
   return (await res.json()) as T;
 }
 
+/** Streams one mock-interview interviewer turn. Resolves with whether the interview has ended. */
+export async function streamMockTurn(
+  mockId: string,
+  answer: string | undefined,
+  onText: (chunk: string) => void,
+  signal?: AbortSignal,
+): Promise<{ end: boolean }> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/mock/${mockId}/turn`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(answer ? { answer } : {}),
+      signal,
+    });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw e;
+    throw networkError();
+  }
+  if (!res.ok || !res.body) throw await readError(res);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let end: boolean | undefined;
+  const handle = (raw: string) => {
+    if (!raw.trim()) return;
+    const ev = JSON.parse(raw) as { type: string; text?: string; end?: boolean; error?: AiError };
+    if (ev.type === "text" && ev.text) onText(ev.text);
+    else if (ev.type === "done") end = !!ev.end;
+    else if (ev.type === "error" && ev.error) throw new AiRequestError(ev.error);
+  };
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        handle(buffer.slice(0, nl));
+        buffer = buffer.slice(nl + 1);
+      }
+    }
+    handle(buffer);
+  } catch (e) {
+    if (e instanceof AiRequestError || (e as Error).name === "AbortError") throw e;
+    throw networkError();
+  }
+  if (end === undefined) throw networkError();
+  return { end };
+}
+
 type StreamEvent =
   | { type: "text"; text: string }
   | { type: "done"; questionId: string | null; none?: boolean }

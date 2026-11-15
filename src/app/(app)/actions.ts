@@ -137,6 +137,39 @@ export async function deleteQuestion(id: string, sessionId: string) {
   revalidatePath(`/sessions/${sessionId}`);
 }
 
+// ---------- Mock interviews ----------
+
+const MockInput = z.object({
+  session_id: z.uuid(),
+  kind: z.enum(["behavioral", "technical", "mixed"]),
+  question_count: z.coerce.number().int().min(2).max(12),
+});
+
+export async function startMock(_: ActionState, form: FormData): Promise<ActionState> {
+  const parsed = MockInput.safeParse({
+    session_id: form.get("session_id"),
+    kind: form.get("kind"),
+    question_count: form.get("question_count"),
+  });
+  if (!parsed.success) return { error: "Choose an interview type and length." };
+  const { supabase, user } = await requireUser();
+
+  const { data, error } = await supabase
+    .from("mock_interviews")
+    .insert({ ...parsed.data, user_id: user.id })
+    .select("id")
+    .single();
+  if (error || !data) return { error: "Couldn't start the mock interview. Please try again." };
+
+  redirect(`/mock/${data.id}`);
+}
+
+export async function deleteMock(id: string, sessionId: string) {
+  const { supabase } = await requireUser();
+  await supabase.from("mock_interviews").delete().eq("id", z.uuid().parse(id));
+  revalidatePath(`/sessions/${sessionId}`);
+}
+
 // ---------- Auth ----------
 
 export async function signOut() {

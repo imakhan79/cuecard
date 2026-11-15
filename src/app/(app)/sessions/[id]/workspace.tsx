@@ -9,6 +9,7 @@ import {
   Copy,
   FileText,
   Headphones,
+  Headset,
   History,
   Loader2,
   MessageSquareText,
@@ -22,15 +23,16 @@ import {
 } from "lucide-react";
 import { CopilotPanel } from "@/components/copilot/copilot-panel";
 import { ErrorNotice } from "@/components/error-notice";
+import { MockPanel } from "@/components/mock/mock-panel";
 import { Markdown } from "@/components/markdown";
 import { MicButton } from "@/components/mic-button";
 import { SessionForm } from "@/components/session-form";
 import { AiRequestError, postJson, streamAnswer } from "@/lib/ai/client";
 import type { AiError } from "@/lib/ai/errors";
-import type { Answer, InterviewSession, Question, Resume } from "@/lib/types";
+import type { Answer, InterviewSession, MockInterview, Question, Resume } from "@/lib/types";
 import { deleteQuestion, deleteSession, updateSession } from "../../actions";
 
-type Tab = "copilot" | "live" | "practice" | "history";
+type Tab = "copilot" | "mock" | "live" | "practice" | "history";
 
 function toAiError(e: unknown): AiError | null {
   if ((e as Error)?.name === "AbortError") return null;
@@ -42,9 +44,11 @@ export function Workspace({
   questions,
   resumes,
   resumeTitle,
+  mocks,
 }: {
   session: InterviewSession;
   questions: Question[];
+  mocks: Pick<MockInterview, "id" | "kind" | "question_count" | "status" | "overall_score" | "created_at">[];
   resumes: Pick<Resume, "id" | "title">[];
   resumeTitle: string | null;
 }) {
@@ -55,6 +59,7 @@ export function Workspace({
 
   const tabs: { id: Tab; label: string; icon: typeof Radio; count?: number }[] = [
     { id: "copilot", label: "Copilot", icon: Headphones },
+    { id: "mock", label: "Mock", icon: Headset, count: mocks.length },
     { id: "live", label: "Type", icon: Radio },
     { id: "practice", label: "Practice", icon: Sparkles, count: practice.length },
     { id: "history", label: "History", icon: History, count: questions.length },
@@ -115,14 +120,14 @@ export function Workspace({
         </div>
       )}
 
-      <div role="tablist" className="mt-6 grid grid-cols-4 gap-1 rounded-xl border border-border bg-surface p-1">
+      <div role="tablist" className="mt-6 flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1">
         {tabs.map(({ id, label, icon: Icon, count }) => (
           <button
             key={id}
             role="tab"
             aria-selected={tab === id}
             onClick={() => setTab(id)}
-            className={`inline-flex items-center justify-center gap-2 rounded-lg px-2 py-2 text-sm font-medium transition ${
+            className={`inline-flex flex-1 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition ${
               tab === id ? "bg-accent text-accent-fg shadow-sm" : "text-muted hover:text-fg"
             }`}
           >
@@ -135,6 +140,7 @@ export function Workspace({
 
       <div className="mt-6">
         {tab === "copilot" && <CopilotPanel sessionId={session.id} meetingUrl={session.meeting_url} />}
+        {tab === "mock" && <MockPanel sessionId={session.id} mocks={mocks} />}
         {tab === "live" && <LivePanel sessionId={session.id} />}
         {tab === "practice" && <PracticePanel sessionId={session.id} questions={practice} />}
         {tab === "history" && <HistoryPanel sessionId={session.id} questions={questions} />}

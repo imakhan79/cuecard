@@ -8,6 +8,7 @@ An AI interview assistant built with **Next.js 16** (App Router, TypeScript, Tai
 - **Resumes:** paste your resume, or upload a `.txt`/`.md` file or a PDF. Claude transcribes the PDF word for word, on the server.
 - **Interviews:** one per interview, holding the company, role, job description and the linked resume.
 - **Copilot for Zoom, Microsoft Teams and Google Meet:** save the meeting link on an interview and open it with **Join**. Then share the meeting tab (or your whole screen, with system audio) with Cuecard. It hears the interviewer, transcribes what they say, works out each question, and streams an answer automatically. **Pop out** puts the copilot in a small always-on-top window beside the call, and it works with the Zoom and Teams desktop apps too (Chrome/Edge). Prefer not to share? **Microphone mode** uses the browser's free speech recognition instead.
+- **AI mock interviews:** a spoken practice interview. An AI interviewer reads each question aloud using the browser's text-to-speech, listens to your spoken answer through the browser's speech recognition (or you can type), and asks follow-ups when an answer is vague. You choose behavioural, role-specific or mixed questions, and 3, 5 or 8 of them. At the end you get a report: an overall score, a hire signal, strengths, things to improve, notes on delivery, and a score with a stronger model answer for each question.
 - **Live answers:** type the interviewer's question, or dictate it with the browser's speech recognition. A spoken-style answer streams back in seconds.
 - **Practice:** generates the questions you're most likely to face. You answer in your own words and get a 1–10 score, strengths, things to improve, any claims your resume doesn't back up, and an improved version. A suggested answer is available on demand.
 - **History:** every question and answer is saved per interview. You can copy or delete them.
@@ -57,7 +58,7 @@ Fill in `.env.local`:
 
 ### 4. Database
 
-Open the Supabase **SQL Editor**, paste the contents of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**. The script is safe to re-run. If you set up the database before Copilot was added, also run [`supabase/migrations/002_copilot.sql`](supabase/migrations/002_copilot.sql).
+Open the Supabase **SQL Editor**, paste the contents of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**. The script is safe to re-run. If you set up the database before Copilot was added, also run the files in [`supabase/migrations/`](supabase/migrations) in order.
 
 You can also run it with psql (use the Session pooler connection string from Supabase → Connect):
 
@@ -106,6 +107,8 @@ src/
     (app)/sessions/[id]        # live, practice and history workspace
     (app)/actions.ts           # server actions (CRUD, sign out)
     api/answer                 # streamed live / suggested / copilot answers
+    api/mock/[id]/turn         # streamed AI interviewer turns
+    api/mock/[id]/report       # scored mock-interview debrief
     api/transcribe             # meeting-audio speech-to-text (Deepgram or OpenAI)
     api/questions              # practice question generation
     api/feedback               # answer scoring and feedback

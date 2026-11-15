@@ -13,7 +13,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   if (!UUID.test(id)) notFound();
 
   const { supabase } = await getUser();
-  const [{ data: session }, { data: questions }, { data: resumes }] = await Promise.all([
+  const [{ data: session }, { data: questions }, { data: resumes }, { data: mocks }] = await Promise.all([
     supabase
       .from("interview_sessions")
       .select("id, title, company, role, job_description, meeting_url, resume_id, created_at")
@@ -27,6 +27,11 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
       .order("created_at", { referencedTable: "answers", ascending: false })
       .returns<Question[]>(),
     supabase.from("resumes").select("id, title").order("updated_at", { ascending: false }),
+    supabase
+      .from("mock_interviews")
+      .select("id, kind, question_count, status, overall_score, created_at")
+      .eq("session_id", id)
+      .order("created_at", { ascending: false }),
   ]);
 
   if (!session) notFound();
@@ -38,6 +43,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
       questions={questions ?? []}
       resumes={resumes ?? []}
       resumeTitle={resumeTitle}
+      mocks={mocks ?? []}
     />
   );
 }

@@ -1,15 +1,15 @@
 import Link from "next/link";
-import { FileText, MessagesSquare, Mic, ShieldCheck, Sparkles, Target } from "lucide-react";
+import { FileText, Headset, ShieldCheck, Sparkles, Target, Video } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme";
 import { DemoButton } from "@/components/demo-button";
 import { isDemoEnabled } from "./(auth)/demo-actions";
 
 const FEATURES = [
-  { icon: Mic, title: "Live answers", body: "Type or speak the interviewer's question and get a spoken-style answer streamed in seconds." },
+  { icon: Video, title: "Copilot for Zoom, Teams & Meet", body: "Share your call and Cuecard hears the interviewer, spots each question and streams an answer, in a floating window beside the call." },
+  { icon: Headset, title: "AI mock interviews", body: "Practise out loud with a voice interviewer that asks follow-ups, then get a scored report with stronger answers." },
   { icon: FileText, title: "Grounded in your resume", body: "Answers only use facts from your resume. Anything missing becomes a placeholder, never made up." },
   { icon: Target, title: "Tailored to the role", body: "Paste the job description so every answer and question maps to what they're hiring for." },
-  { icon: MessagesSquare, title: "Practice questions", body: "Generate the questions you're most likely to face, based on the role and your background." },
   { icon: Sparkles, title: "Honest feedback", body: "Answer in your own words and get a score, strengths, fixes, and an improved version." },
   { icon: ShieldCheck, title: "Private by design", body: "Row Level Security on every table. Only you can see your resumes, sessions and answers." },
 ];
