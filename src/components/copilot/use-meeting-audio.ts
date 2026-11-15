@@ -16,9 +16,41 @@ const PAUSE_MS = 800; // silence that ends an utterance
 const MIN_CLIP_MS = 700;
 const MAX_CLIP_MS = 20000;
 
-function pickMime() {
-  const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
-  return types.find((t) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t)) ?? "";
+/** Concatenates PCM chunks, resamples to `outRate`, and encodes 16-bit mono WAV. */
+function encodeWav(chunks: Float32Array[], inRate: number, outRate: number): Blob {
+  const total = chunks.reduce((n, c) => n + c.length, 0);
+  const input = new Float32Array(total);
+  let o = 0;
+  for (const c of chunks) {
+    input.set(c, o);
+    o += c.length;
+  }
+  const ratio = inRate / outRate;
+  const length = Math.floor(total / ratio);
+  const view = new DataView(new ArrayBuffer(44 + length * 2));
+  const str = (off: number, s: string) => [...s].forEach((ch, i) => view.setUint8(off + i, ch.charCodeAt(0)));
+  str(0, "RIFF");
+  view.setUint32(4, 36 + length * 2, true);
+  str(8, "WAVEfmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, outRate, true);
+  view.setUint32(28, outRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  str(36, "data");
+  view.setUint32(40, length * 2, true);
+  for (let i = 0; i < length; i++) {
+    // Average the input samples that fall into this output sample (simple low-pass).
+    const start = Math.floor(i * ratio);
+    const end = Math.min(total, Math.floor((i + 1) * ratio));
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += input[j];
+    const s = Math.max(-1, Math.min(1, sum / Math.max(1, end - start)));
+    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Blob([view], { type: "audio/wav" });
 }
 
 /**
@@ -56,7 +88,7 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
 
   const start = useCallback(async () => {
     setError(null);
-    if (!navigator.mediaDevices?.getDisplayMedia || typeof MediaRecorder === "undefined") {
+    if (!navigator.mediaDevices?.getDisplayMedia || typeof AudioContext === "undefined") {
       setError({ code: "unsupported", message: "This browser can't capture meeting audio. Use Chrome or Edge on desktop, or switch to Microphone mode." });
       return;
     }
@@ -100,36 +132,39 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
     analyser.fftSize = 1024;
     source.connect(analyser);
     const buf = new Float32Array(analyser.fftSize);
-    const mime = pickMime();
 
-    let recorder: MediaRecorder | null = null;
-    let chunks: Blob[] = [];
+    // Record raw PCM and encode each utterance as 16 kHz mono WAV, a format every
+    // speech-to-text service accepts (Chrome's MediaRecorder only makes WebM).
+    const processor = ctx.createScriptProcessor(4096, 1, 1);
+    const mute = ctx.createGain();
+    mute.gain.value = 0;
+    source.connect(processor);
+    processor.connect(mute);
+    mute.connect(ctx.destination);
+
+    let chunks: Float32Array[] = [];
     let clipStart = 0;
     let heardVoice = false;
     let lastVoice = 0;
     let voiceNow = false;
 
+    processor.onaudioprocess = (e) => {
+      chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+    };
+
     const begin = () => {
       chunks = [];
       heardVoice = false;
       clipStart = performance.now();
-      recorder = new MediaRecorder(audioStream, mime ? { mimeType: mime } : undefined);
-      recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-      recorder.start();
     };
 
     const cut = (send: boolean) => {
-      const r = recorder;
-      if (!r || r.state === "inactive") return;
       const parts = chunks;
       const duration = performance.now() - clipStart;
-      r.onstop = () => {
-        if (send && duration >= MIN_CLIP_MS && parts.length) {
-          cbs.current.onClip(new Blob(parts, { type: r.mimeType || "audio/webm" }));
-        }
-      };
-      r.stop();
       begin();
+      if (send && duration >= MIN_CLIP_MS && parts.length) {
+        cbs.current.onClip(encodeWav(parts, ctx.sampleRate, 16000));
+      }
     };
 
     begin();
@@ -170,10 +205,8 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
         t.removeEventListener("ended", onEnded);
         t.stop();
       });
-      if (recorder && recorder.state !== "inactive") {
-        recorder.onstop = null;
-        recorder.stop();
-      }
+      processor.onaudioprocess = null;
+      processor.disconnect();
       ctx.close().catch(() => {});
       v.srcObject = null;
       video.current = null;

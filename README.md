@@ -52,7 +52,7 @@ Fill in `.env.local`:
 | --- | --- |
 | `ANTHROPIC_API_KEY` | Anthropic Console → API keys |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API → Project URL |
-| `DEEPGRAM_API_KEY` or `OPENAI_API_KEY` | Optional. Speech-to-text for Copilot's *Meeting audio* mode ([Deepgram](https://console.deepgram.com) is used if both are set). Microphone mode works without either. |
+| `DEEPGRAM_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY` | Optional. Speech-to-text for Copilot's *Meeting audio* mode ([Deepgram](https://console.deepgram.com) is used if both are set). Microphone mode works without either. |
 | `DEMO_EMAIL` / `DEMO_PASSWORD` | Optional. One-click demo login (see below). |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase → Project Settings → API Keys → publishable key (`sb_publishable_…`). The legacy `anon` key also works. |
 

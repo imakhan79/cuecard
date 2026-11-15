@@ -23,6 +23,47 @@ export async function POST(req: Request) {
 
   const deepgram = process.env.DEEPGRAM_API_KEY;
   const openai = process.env.OPENAI_API_KEY;
+  const gemini = process.env.GEMINI_API_KEY;
+
+  if (!deepgram && !openai && gemini) {
+    // Google's dedicated speech-to-text model. Unlike general Gemini models it returns
+    // nothing for silence/noise instead of inventing words, which matters here: an
+    // invented sentence would become a fake interviewer question.
+    try {
+      const res = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-transcribe:generateContent",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": gemini },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  { inline_data: { mime_type: (audio.type || "audio/wav").split(";")[0], data: Buffer.from(await audio.arrayBuffer()).toString("base64") } },
+                ],
+              },
+            ],
+          }),
+          signal: req.signal,
+        },
+      );
+      if (res.status === 400 || res.status === 401 || res.status === 403) {
+        return jsonError(502, "invalid_key", "The Gemini API key was rejected. Check GEMINI_API_KEY.");
+      }
+      if (res.status === 429) return jsonError(429, "rate_limit", "Transcription rate limit reached. Retrying shortly.");
+      if (!res.ok) return jsonError(502, "unknown", `Transcription failed (${res.status}).`);
+      const data = (await res.json()) as {
+        candidates?: { content?: { parts?: { text?: string; audioTranscription?: { text?: string } }[] } }[];
+      };
+      const text =
+        data.candidates?.[0]?.content?.parts?.map((p) => p.audioTranscription?.text ?? p.text ?? "").join(" ") ?? "";
+      return Response.json({ text: text.trim() });
+    } catch (err) {
+      if ((err as Error).name === "AbortError") return jsonError(499, "network", "Cancelled.");
+      return jsonError(503, "network", "Couldn't reach the transcription service.");
+    }
+  }
+
   if (!deepgram && !openai) {
     return jsonError(
       500,

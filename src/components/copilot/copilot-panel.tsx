@@ -189,7 +189,7 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
       queue.current = queue.current.then(async () => {
         try {
           const form = new FormData();
-          form.append("audio", clip, "clip.webm");
+          form.append("audio", clip, "clip.wav");
           form.append("lang", langRef.current);
           const { text } = await postJson<{ text: string }>("/api/transcribe", form);
           addLine(text);
