@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <title>Cuecard</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body { margin: 0; height: 56px; overflow: hidden; background: #0d0d12; color: #ececf1; font: 14px system-ui, "Segoe UI", sans-serif; }
+      .bar { height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid #2a2a36; }
+      .logo { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 15px; margin-right: 6px; white-space: nowrap; }
+      .mark { width: 28px; height: 28px; border-radius: 8px; background: #8b7fff; display: grid; place-items: center; color: #0d0d12; font-weight: 800; }
+      input { flex: 1; min-width: 160px; height: 36px; border-radius: 10px; border: 1px solid #2a2a36; background: #15151c; color: #ececf1; padding: 0 12px; font: inherit; outline: none; }
+      input:focus { border-color: #8b7fff; }
+      button { height: 36px; border-radius: 10px; border: 1px solid #2a2a36; background: #15151c; color: #ececf1; padding: 0 12px; font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
+      button:hover { background: #1d1d26; }
+      button.primary { background: #8b7fff; border-color: #8b7fff; color: #0d0d12; }
+      button.on { border-color: #8b7fff; color: #b8b0ff; }
+      .seg { display: flex; gap: 4px; }
+      .hint { color: #9c9cab; font-size: 12px; white-space: nowrap; }
+      .err { color: #ff6b7d; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="bar">
+      <div class="logo"><div class="mark">C</div>Cuecard</div>
+      <input id="url" type="url" placeholder="Paste a Google Meet, Zoom or Microsoft Teams link" />
+      <button class="primary" id="join">Join</button>
+      <button id="leave" title="Leave the meeting">Leave</button>
+      <span id="msg" class="hint"></span>
+      <div class="seg" role="group" aria-label="Layout">
+        <button data-l="split" class="on" title="Meeting and copilot side by side">Split</button>
+        <button data-l="meeting" title="Meeting only">Meeting</button>
+        <button data-l="copilot" title="Copilot only">Copilot</button>
+      </div>
+      <button id="wider" title="Give the meeting more room">◀▶</button>
+      <button id="reload" title="Reload Cuecard">↻</button>
+    </div>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const msg = $("msg");
+      let ratio = 0.6;
+      const setLayout = (l) => {
+        window.cuecard.layout(l);
+        document.querySelectorAll("[data-l]").forEach((b) => b.classList.toggle("on", b.dataset.l === l));
+      };
+      const join = async () => {
+        const ok = await window.cuecard.join($("url").value);
+        msg.className = ok ? "hint" : "err";
+        msg.textContent = ok ? "Joined. Press Start copilot →" : "Use a meet.google.com, zoom.us or teams.microsoft.com link";
+        if (ok) setLayout("split");
+      };
+      $("join").onclick = join;
+      $("url").addEventListener("keydown", (e) => e.key === "Enter" && join());
+      $("leave").onclick = () => { window.cuecard.leave(); setLayout("copilot"); msg.textContent = ""; };
+      $("reload").onclick = () => window.cuecard.reload("app");
+      $("wider").onclick = () => { ratio = ratio >= 0.75 ? 0.45 : ratio + 0.1; window.cuecard.split(ratio); setLayout("split"); };
+      document.querySelectorAll("[data-l]").forEach((b) => (b.onclick = () => setLayout(b.dataset.l)));
+      window.cuecard.onMeetingUrl((u) => { $("url").value = u; msg.className = "hint"; msg.textContent = "Joined. Press Start copilot →"; setLayout("split"); });
+    </script>
+  </body>
+</html>

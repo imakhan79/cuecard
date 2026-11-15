@@ -1,0 +1,25 @@
+{
+  "name": "cuecard-desktop",
+  "productName": "Cuecard",
+  "version": "1.0.0",
+  "description": "Cuecard Desktop: your interview copilot with Google Meet, Zoom and Microsoft Teams built in.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable nsis"
+  },
+  "devDependencies": {
+    "electron": "45.1.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "app.cuecard.desktop",
+    "productName": "Cuecard",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "preload-shell.js", "preload-app.js", "shell.html", "icon.png"],
+    "win": { "target": ["portable", "nsis"], "icon": "icon.png" },
+    "portable": { "artifactName": "Cuecard-Portable-${version}.exe" },
+    "nsis": { "artifactName": "Cuecard-Setup-${version}.exe", "oneClick": true }
+  }
+}

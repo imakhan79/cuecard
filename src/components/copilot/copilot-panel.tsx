@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   AudioLines,
   ClipboardCheck,
@@ -91,6 +91,12 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
   }, [lang]);
 
   const popout = usePopOut();
+  // Running inside Cuecard Desktop (Electron): meeting audio is captured without a share dialog.
+  const inDesktop = useSyncExternalStore(
+    () => () => {},
+    () => "cuecardDesktop" in window,
+    () => false,
+  );
 
   /* ---------------- answering ---------------- */
 
@@ -115,7 +121,9 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
     streamingRef.current = true;
     setError(null);
     const id = Date.now();
-    setCards((c) => [{ id, question: "", answer: "", streaming: true }, ...c].slice(0, 20));
+    // Show what the interviewer just said straight away; the AI's cleaned-up question replaces it.
+    const provisional = fresh.map((l) => l.text).join(" ").slice(-300);
+    setCards((c) => [{ id, question: provisional, answer: "", streaming: true }, ...c].slice(0, 20));
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     let raw = "";
@@ -393,7 +401,7 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
         <div className="card overflow-hidden" aria-live="polite">
           <div className="border-b border-border bg-accent-soft/60 px-4 py-2.5">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-accent">
-              {current.streaming && !current.question ? "Detecting question…" : "Question"}
+              {current.streaming && !current.answer ? "Interviewer asked · writing answer…" : "Question"}
             </p>
             {current.question && <p className="mt-0.5 text-sm font-medium">{current.question}</p>}
           </div>
@@ -451,7 +459,9 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
         <p className="flex gap-2 text-xs leading-relaxed text-muted">
           <Info className="mt-0.5 size-3.5 shrink-0" />
           {source === "meeting"
-            ? SHARE_TIPS[platform ?? "other"]
+            ? inDesktop
+              ? "Cuecard Desktop: join the meeting on the left, then press Start copilot. The meeting's sound is captured automatically, with nothing to share."
+              : SHARE_TIPS[platform ?? "other"]
             : "Uses your browser's speech recognition (Chrome/Edge, free). It hears the interviewer through your speakers, so don't use headphones in this mode."}
         </p>
 
