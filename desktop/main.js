@@ -115,6 +115,10 @@ app.whenReady().then(() => {
   );
 
   createWindow();
+
+  // Optional: open a meeting at start-up, e.g. Cuecard.exe --join=https://meet.google.com/abc-defg-hij
+  const joinArg = process.argv.find((a) => a.startsWith("--join="));
+  if (joinArg) meetingView.webContents.once("did-finish-load", () => openMeeting(joinArg.slice(7)));
 });
 
 ipcMain.handle("join", (_e, url) => openMeeting(String(url || "").trim()));
