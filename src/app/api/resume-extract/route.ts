@@ -1,5 +1,5 @@
-import { getClaude, errorResponse, jsonError, MODEL, FALLBACK, REFUSAL_MESSAGE } from "@/lib/ai/claude";
-import { textOf } from "@/lib/data";
+import { jsonError } from "@/lib/ai/claude";
+import { generateCompat, llmErrorResponse } from "@/lib/ai/llm";
 import { getUser } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -37,13 +37,10 @@ export async function POST(req: Request) {
   }
 
   try {
-    const message = await getClaude()
-      .beta.messages.stream(
+    const message = await generateCompat(
         {
-          model: MODEL,
           max_tokens: 32000,
           output_config: { effort: "low" },
-          ...FALLBACK,
           messages: [
             {
               role: "user",
@@ -58,14 +55,11 @@ export async function POST(req: Request) {
           ],
         },
         { signal: req.signal },
-      )
-      .finalMessage();
-
-    if (message.stop_reason === "refusal") return jsonError(422, "refused", REFUSAL_MESSAGE);
-    const text = textOf(message.content).trim();
+      );
+    const text = message.trim();
     if (!text) return jsonError(422, "bad_request", "No text found in that PDF.");
     return Response.json({ text });
   } catch (err) {
-    return errorResponse(err);
+    return llmErrorResponse(err);
   }
 }

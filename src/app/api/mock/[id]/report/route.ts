@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { getClaude, errorResponse, jsonError, MODEL, FALLBACK, REFUSAL_MESSAGE } from "@/lib/ai/claude";
+import { jsonError } from "@/lib/ai/claude";
+import { generateCompat, llmErrorResponse } from "@/lib/ai/llm";
 import { MOCK_REPORT_SYSTEM, contextBlock } from "@/lib/ai/prompts";
-import { loadInterviewContext, textOf } from "@/lib/data";
+import { loadInterviewContext } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
 import { MockReportSchema, type MockInterview } from "@/lib/types";
 
@@ -62,13 +63,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     .join("\n\n");
 
   try {
-    const message = await getClaude()
-      .beta.messages.stream(
+    const message = await generateCompat(
         {
-          model: MODEL,
           max_tokens: 16000,
           output_config: { effort: "medium", format: { type: "json_schema", schema } },
-          ...FALLBACK,
           system: [
             { type: "text", text: MOCK_REPORT_SYSTEM },
             { type: "text", text: contextBlock(loaded.context), cache_control: { type: "ephemeral" } },
@@ -81,19 +79,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           ],
         },
         { signal: req.signal },
-      )
-      .finalMessage();
-
-    if (message.stop_reason === "refusal") return jsonError(422, "refused", REFUSAL_MESSAGE);
+      );
 
     let json: unknown = null;
     try {
-      json = JSON.parse(textOf(message.content));
+      json = JSON.parse(message);
     } catch {
       // handled below
     }
     const out = MockReportSchema.safeParse(json);
-    if (!out.success) return jsonError(502, "unknown", "Claude returned an unexpected format. Please retry.");
+    if (!out.success) return jsonError(502, "unknown", "The AI returned an unexpected format. Please retry.");
     const clamp = (n: number) => Math.min(10, Math.max(1, Math.round(n)));
     const report = {
       ...out.data,
@@ -109,6 +104,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     return Response.json({ report });
   } catch (err) {
-    return errorResponse(err);
+    return llmErrorResponse(err);
   }
 }

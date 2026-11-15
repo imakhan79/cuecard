@@ -1,13 +1,6 @@
 import { z } from "zod";
-import {
-  getClaude,
-  toAiError,
-  errorResponse,
-  jsonError,
-  MODEL,
-  FALLBACK,
-  REFUSAL_MESSAGE,
-} from "@/lib/ai/claude";
+import { jsonError } from "@/lib/ai/claude";
+import { ndjsonResponse } from "@/lib/ai/ndjson";
 import { COPILOT_SYSTEM, LIVE_ANSWER_SYSTEM, contextBlock } from "@/lib/ai/prompts";
 import { loadInterviewContext } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
@@ -62,115 +55,50 @@ export async function POST(req: Request) {
   const loaded = await loadInterviewContext(supabase, sessionId);
   if (!loaded) return jsonError(404, "not_found", "Interview session not found.");
 
-  let stream;
-  let iterator;
-  let first;
-  try {
-    stream = getClaude().beta.messages.stream(
-      {
-        model: MODEL,
-        max_tokens: 8000,
-        output_config: { effort: "low" },
-        ...FALLBACK,
-        system: [
-          { type: "text", text: copilot ? COPILOT_SYSTEM : LIVE_ANSWER_SYSTEM },
-          // Resume + job description stay the same for a whole session, so cache them.
-          { type: "text", text: contextBlock(loaded.context), cache_control: { type: "ephemeral" } },
-        ],
-        messages: [
-          {
-            role: "user",
-            content:
-              input.mode === "copilot"
-                ? `<meeting_transcript>\n${input.transcript}\n</meeting_transcript>\n\nAnswer the interviewer's latest question.`
-                : `Interview question:\n${input.question}`,
-          },
-        ],
-      },
-      { signal: req.signal },
-    );
-    iterator = stream[Symbol.asyncIterator]();
-    // Wait for the first event so key / rate-limit / network errors become a proper HTTP error.
-    first = await iterator.next();
-  } catch (err) {
-    return errorResponse(err);
-  }
-
-  const encoder = new TextEncoder();
-  const body = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (obj: unknown) =>
-        controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
-      let answer = "";
-      try {
-        let result = first;
-        while (!result.done) {
-          const event = result.value;
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            answer += event.delta.text;
-            send({ type: "text", text: event.delta.text });
-          }
-          result = await iterator.next();
-        }
-
-        const final = await stream.finalMessage();
-        if (final.stop_reason === "refusal") {
-          send({ type: "error", error: { code: "refused", message: REFUSAL_MESSAGE } });
-          return;
-        }
-
-        let savedId: string | null = questionId ?? null;
-        let question = input.mode === "copilot" ? "" : input.question;
-        if (copilot) {
-          const split = splitCopilot(answer);
-          if (split.none || !split.answer) {
-            send({ type: "done", questionId: null, none: true });
-            return;
-          }
-          question = split.question;
-          answer = split.answer;
-          if (input.mode === "copilot" && !input.save) {
-            send({ type: "done", questionId: null, private: true });
-            return;
-          }
-        }
-        if (questionId) {
-          await supabase.from("questions").update({ suggested_answer: answer }).eq("id", questionId);
-        } else {
-          const { data } = await supabase
-            .from("questions")
-            .insert({
-              session_id: sessionId,
-              user_id: user.id,
-              source: copilot ? "copilot" : "live",
-              question: question.slice(0, 5000),
-              suggested_answer: answer,
-            })
-            .select("id")
-            .single();
-          savedId = data?.id ?? null;
-        }
-        send({ type: "done", questionId: savedId });
-      } catch (err) {
-        if (!req.signal.aborted) send({ type: "error", error: toAiError(err).error });
-      } finally {
-        try {
-          controller.close();
-        } catch {
-          // already closed
-        }
+  return ndjsonResponse(
+    req,
+    {
+      system: copilot ? COPILOT_SYSTEM : LIVE_ANSWER_SYSTEM,
+      // Resume + job description stay the same for a whole session, so they're cached.
+      context: contextBlock(loaded.context),
+      effort: "low",
+      maxTokens: 8000,
+      messages: [
+        {
+          role: "user",
+          content:
+            input.mode === "copilot"
+              ? `<meeting_transcript>\n${input.transcript}\n</meeting_transcript>\n\nAnswer the interviewer's latest question.`
+              : `Interview question:\n${input.question}`,
+        },
+      ],
+    },
+    async (full) => {
+      let answer = full;
+      let question = input.mode === "copilot" ? "" : input.question;
+      if (input.mode === "copilot") {
+        const split = splitCopilot(full);
+        if (split.none || !split.answer) return { questionId: null, none: true };
+        question = split.question;
+        answer = split.answer;
+        if (!input.save) return { questionId: null, private: true };
       }
+      if (questionId) {
+        await supabase.from("questions").update({ suggested_answer: answer }).eq("id", questionId);
+        return { questionId };
+      }
+      const { data } = await supabase
+        .from("questions")
+        .insert({
+          session_id: sessionId,
+          user_id: user.id,
+          source: copilot ? "copilot" : "live",
+          question: question.slice(0, 5000),
+          suggested_answer: answer,
+        })
+        .select("id")
+        .single();
+      return { questionId: data?.id ?? null };
     },
-    cancel() {
-      stream.abort();
-    },
-  });
-
-  return new Response(body, {
-    headers: {
-      "Content-Type": "application/x-ndjson; charset=utf-8",
-      "Cache-Control": "no-store",
-      "X-Accel-Buffering": "no",
-    },
-  });
+  );
 }

@@ -1,4 +1,4 @@
-import { getClaude, jsonError, MODEL, FALLBACK } from "@/lib/ai/claude";
+import { jsonError } from "@/lib/ai/claude";
 import { ndjsonResponse } from "@/lib/ai/ndjson";
 import { SCREEN_HELP_SYSTEM, contextBlock } from "@/lib/ai/prompts";
 import { loadInterviewContext } from "@/lib/data";
@@ -27,28 +27,19 @@ export async function POST(req: Request) {
   const loaded = sessionId ? await loadInterviewContext(supabase, sessionId) : null;
   const data = Buffer.from(await image.arrayBuffer()).toString("base64");
 
-  return ndjsonResponse(req, () =>
-    getClaude().beta.messages.stream(
+  return ndjsonResponse(req, {
+    system: SCREEN_HELP_SYSTEM,
+    context: loaded ? contextBlock(loaded.context) : undefined,
+    effort: "medium",
+    maxTokens: 16000,
+    messages: [
       {
-        model: MODEL,
-        max_tokens: 16000,
-        output_config: { effort: "medium" },
-        ...FALLBACK,
-        system: [
-          { type: "text", text: SCREEN_HELP_SYSTEM },
-          ...(loaded ? [{ type: "text" as const, text: contextBlock(loaded.context), cache_control: { type: "ephemeral" as const } }] : []),
-        ],
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: mediaType, data } },
-              { type: "text", text: note ? `Help with what's on my screen. Note: ${note}` : "Help with what's on my screen." },
-            ],
-          },
+        role: "user",
+        content: [
+          { type: "image", mediaType, data },
+          { type: "text", text: note ? `Help with what's on my screen. Note: ${note}` : "Help with what's on my screen." },
         ],
       },
-      { signal: req.signal },
-    ),
-  );
+    ],
+  });
 }

@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { getClaude, errorResponse, jsonError, MODEL, FALLBACK, REFUSAL_MESSAGE } from "@/lib/ai/claude";
+import { jsonError } from "@/lib/ai/claude";
+import { generateJson, llmErrorResponse } from "@/lib/ai/llm";
 import { QUESTIONS_SYSTEM, contextBlock } from "@/lib/ai/prompts";
-import { loadInterviewContext, textOf } from "@/lib/data";
+import { loadInterviewContext } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -25,57 +26,28 @@ export async function POST(req: Request) {
   const loaded = await loadInterviewContext(supabase, sessionId);
   if (!loaded) return jsonError(404, "not_found", "Interview session not found.");
 
-  const { data: existing } = await supabase
-    .from("questions")
-    .select("question")
-    .eq("session_id", sessionId)
-    .limit(50);
+  const { data: existing } = await supabase.from("questions").select("question").eq("session_id", sessionId).limit(50);
   const avoid = (existing ?? []).map((q) => `- ${q.question}`).join("\n");
 
   try {
-    const message = await getClaude()
-      .beta.messages.stream(
-        {
-          model: MODEL,
-          max_tokens: 16000,
-          output_config: {
-            effort: "medium",
-            format: {
-              type: "json_schema",
-              schema: {
-                type: "object",
-                properties: { questions: { type: "array", items: { type: "string" } } },
-                required: ["questions"],
-                additionalProperties: false,
-              },
-            },
-          },
-          ...FALLBACK,
-          system: [
-            { type: "text", text: QUESTIONS_SYSTEM },
-            { type: "text", text: contextBlock(loaded.context), cache_control: { type: "ephemeral" } },
-          ],
-          messages: [
-            {
-              role: "user",
-              content: `Generate ${count} interview questions.${avoid ? `\nDo not repeat these:\n${avoid}` : ""}`,
-            },
-          ],
-        },
-        { signal: req.signal },
-      )
-      .finalMessage();
-
-    if (message.stop_reason === "refusal") return jsonError(422, "refused", REFUSAL_MESSAGE);
-
-    let json: unknown;
-    try {
-      json = JSON.parse(textOf(message.content));
-    } catch {
-      json = null;
-    }
+    const json = await generateJson({
+      system: QUESTIONS_SYSTEM,
+      context: contextBlock(loaded.context),
+      effort: "medium",
+      maxTokens: 16000,
+      schema: {
+        type: "object",
+        properties: { questions: { type: "array", items: { type: "string" } } },
+        required: ["questions"],
+        additionalProperties: false,
+      },
+      messages: [
+        { role: "user", content: `Generate ${count} interview questions.${avoid ? `\nDo not repeat these:\n${avoid}` : ""}` },
+      ],
+      signal: req.signal,
+    });
     const out = Output.safeParse(json);
-    if (!out.success) return jsonError(502, "unknown", "Claude returned an unexpected format. Please retry.");
+    if (!out.success) return jsonError(502, "unknown", "The AI returned an unexpected format. Please retry.");
 
     const rows = out.data.questions.slice(0, count).map((question) => ({
       session_id: sessionId,
@@ -85,9 +57,8 @@ export async function POST(req: Request) {
     }));
     const { data, error } = await supabase.from("questions").insert(rows).select("*");
     if (error) return jsonError(500, "unknown", "Couldn't save the questions. Please retry.");
-
     return Response.json({ questions: data });
   } catch (err) {
-    return errorResponse(err);
+    return llmErrorResponse(err);
   }
 }

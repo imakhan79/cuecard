@@ -1,6 +1,7 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { getClaude, toAiError, errorResponse, jsonError, MODEL, FALLBACK, REFUSAL_MESSAGE } from "@/lib/ai/claude";
+import { jsonError } from "@/lib/ai/claude";
+import type { Msg } from "@/lib/ai/llm";
+import { ndjsonResponse } from "@/lib/ai/ndjson";
 import { contextBlock, mockInterviewerSystem } from "@/lib/ai/prompts";
 import { loadInterviewContext } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
@@ -85,86 +86,40 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (mock.kind === "redrill") weakSpots = await loadWeakSpots(supabase, mock.session_id);
 
   // Interviewer turns are the assistant; candidate turns are the user.
-  const messages: Anthropic.Beta.BetaMessageParam[] = [
+  const messages: Msg[] = [
     { role: "user", content: "(The candidate has joined the call.)" },
   ];
   for (const t of transcript) {
     if (t.role === "interviewer") messages.push({ role: "assistant", content: `[${t.tag ?? "Q"}]\n${t.text}` });
     else {
       const prev = messages[messages.length - 1];
-      if (prev.role === "user") prev.content = `${prev.content}\n\n${t.text}`;
+      if (prev.role === "user" && typeof prev.content === "string") prev.content = `${prev.content}\n\n${t.text}`;
       else messages.push({ role: "user", content: t.text });
     }
   }
   const final = messages[messages.length - 1];
   final.content = `${final.content}\n\n<interviewer_notes>${notes}</interviewer_notes>`;
 
-  let stream;
-  let iterator;
-  let first;
-  try {
-    stream = getClaude().beta.messages.stream(
-      {
-        model: MODEL,
-        max_tokens: 4000,
-        output_config: { effort: "low" },
-        ...FALLBACK,
-        system: [
-          { type: "text", text: mockInterviewerSystem(mock.kind, mock.question_count, weakSpots) },
-          { type: "text", text: contextBlock(loaded.context), cache_control: { type: "ephemeral" } },
-        ],
-        messages,
-      },
-      { signal: req.signal },
-    );
-    iterator = stream[Symbol.asyncIterator]();
-    first = await iterator.next();
-  } catch (err) {
-    // Still save the candidate's answer so it isn't lost.
+  const saveAnswer = async () => {
+    // Keep the candidate's answer even if the interviewer turn fails.
     if (answer) await supabase.from("mock_interviews").update({ transcript }).eq("id", id);
-    return errorResponse(err);
-  }
+  };
 
-  const body = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      let text = "";
-      try {
-        let result = first;
-        while (!result.done) {
-          const event = result.value;
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            text += event.delta.text;
-            controller.enqueue(line({ type: "text", text: event.delta.text }));
-          }
-          result = await iterator.next();
-        }
-        const msg = await stream.finalMessage();
-        if (msg.stop_reason === "refusal") {
-          if (answer) await supabase.from("mock_interviews").update({ transcript }).eq("id", id);
-          controller.enqueue(line({ type: "error", error: { code: "refused", message: REFUSAL_MESSAGE } }));
-          return;
-        }
-        const { tag, say } = parseTag(text);
-        transcript.push({ role: "interviewer", text: say, tag, at: new Date().toISOString() });
-        await supabase.from("mock_interviews").update({ transcript }).eq("id", id);
-        controller.enqueue(line({ type: "done", end: tag === "END" }));
-      } catch (err) {
-        if (answer) await supabase.from("mock_interviews").update({ transcript }).eq("id", id);
-        if (!req.signal.aborted) controller.enqueue(line({ type: "error", error: toAiError(err).error }));
-      } finally {
-        try {
-          controller.close();
-        } catch {
-          // already closed
-        }
-      }
+  return ndjsonResponse(
+    req,
+    {
+      system: mockInterviewerSystem(mock.kind, mock.question_count, weakSpots),
+      context: contextBlock(loaded.context),
+      effort: "low",
+      maxTokens: 4000,
+      messages,
     },
-    cancel() {
-      stream.abort();
+    async (text) => {
+      const { tag, say } = parseTag(text);
+      transcript.push({ role: "interviewer", text: say, tag, at: new Date().toISOString() });
+      await supabase.from("mock_interviews").update({ transcript }).eq("id", id);
+      return { end: tag === "END" };
     },
-  });
-
-  return new Response(body, {
-    headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no" },
-  });
+    saveAnswer,
+  );
 }

@@ -1,29 +1,26 @@
 import "server-only";
-import type Anthropic from "@anthropic-ai/sdk";
-import { errorResponse, toAiError, REFUSAL_MESSAGE } from "./claude";
-
-type BetaStream = ReturnType<Anthropic["beta"]["messages"]["stream"]>;
+import { llmError, llmErrorResponse, startTextStream, type LlmRequest } from "./llm";
 
 /**
- * Turns a Claude message stream into an NDJSON response:
+ * Streams a generation as NDJSON:
  *   {"type":"text","text":"…"} … {"type":"done", ...extra} | {"type":"error","error":{code,message}}
- * Connection errors before the first event become a normal JSON error response.
+ * Errors before the first chunk (bad key, no credit, rate limit…) become a normal JSON error response.
+ * `onDone` receives the full text; it can return extra fields for the done event, or `{ skipDone: true }`.
  */
 export async function ndjsonResponse(
   req: Request,
-  makeStream: () => BetaStream,
-  onDone?: (text: string) => Promise<Record<string, unknown> | void>,
+  llm: LlmRequest,
+  onDone?: (text: string, send: (o: unknown) => void) => Promise<Record<string, unknown> | void>,
+  onError?: () => Promise<void>,
 ) {
-  let stream: BetaStream;
-  let iterator: AsyncIterator<Anthropic.Beta.Messages.BetaRawMessageStreamEvent>;
-  let first: IteratorResult<Anthropic.Beta.Messages.BetaRawMessageStreamEvent>;
+  let s;
   try {
-    stream = makeStream();
-    iterator = stream[Symbol.asyncIterator]();
-    first = await iterator.next();
+    s = await startTextStream({ ...llm, signal: req.signal });
   } catch (err) {
-    return errorResponse(err);
+    await onError?.();
+    return llmErrorResponse(err);
   }
+  const stream = s;
 
   const enc = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
@@ -31,24 +28,19 @@ export async function ndjsonResponse(
       const send = (o: unknown) => controller.enqueue(enc.encode(JSON.stringify(o) + "\n"));
       let text = "";
       try {
-        let r = first;
-        while (!r.done) {
-          const ev = r.value;
-          if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
-            text += ev.delta.text;
-            send({ type: "text", text: ev.delta.text });
-          }
-          r = await iterator.next();
+        if (!stream.first.done && stream.first.value) {
+          text += stream.first.value;
+          send({ type: "text", text: stream.first.value });
         }
-        const msg = await stream.finalMessage();
-        if (msg.stop_reason === "refusal") {
-          send({ type: "error", error: { code: "refused", message: REFUSAL_MESSAGE } });
-          return;
+        for await (const chunk of stream.rest) {
+          text += chunk;
+          send({ type: "text", text: chunk });
         }
-        const extra = (await onDone?.(text)) ?? {};
-        send({ type: "done", ...extra });
+        const extra = (await onDone?.(text, send)) ?? {};
+        if (!("skipDone" in extra)) send({ type: "done", ...extra });
       } catch (err) {
-        if (!req.signal.aborted) send({ type: "error", error: toAiError(err).error });
+        await onError?.();
+        if (!req.signal.aborted) send({ type: "error", error: llmError(err).error });
       } finally {
         try {
           controller.close();
@@ -58,7 +50,7 @@ export async function ndjsonResponse(
       }
     },
     cancel() {
-      stream.abort();
+      void stream.rest.return(undefined);
     },
   });
   return new Response(body, {

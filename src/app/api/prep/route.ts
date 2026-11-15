@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { getClaude, errorResponse, jsonError, MODEL, FALLBACK, REFUSAL_MESSAGE } from "@/lib/ai/claude";
+import { jsonError } from "@/lib/ai/claude";
+import { generateCompat, llmErrorResponse } from "@/lib/ai/llm";
 import { PREP_SYSTEM, contextBlock } from "@/lib/ai/prompts";
-import { loadInterviewContext, textOf } from "@/lib/data";
+import { loadInterviewContext } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
 import { PrepSchema } from "@/lib/types";
 
@@ -55,13 +56,10 @@ export async function POST(req: Request) {
   if (!loaded.context.jobDescription) return jsonError(400, "bad_request", "Add the job description under Details first.");
 
   try {
-    const message = await getClaude()
-      .beta.messages.stream(
+    const message = await generateCompat(
         {
-          model: MODEL,
           max_tokens: 16000,
           output_config: { effort: "medium", format: { type: "json_schema", schema } },
-          ...FALLBACK,
           system: [
             { type: "text", text: PREP_SYSTEM },
             { type: "text", text: contextBlock(loaded.context), cache_control: { type: "ephemeral" } },
@@ -69,18 +67,16 @@ export async function POST(req: Request) {
           messages: [{ role: "user", content: "Build my prep plan for this application." }],
         },
         { signal: req.signal },
-      )
-      .finalMessage();
-    if (message.stop_reason === "refusal") return jsonError(422, "refused", REFUSAL_MESSAGE);
+      );
 
     let json: unknown = null;
     try {
-      json = JSON.parse(textOf(message.content));
+      json = JSON.parse(message);
     } catch {
       // handled below
     }
     const out = PrepSchema.safeParse(json);
-    if (!out.success) return jsonError(502, "unknown", "Claude returned an unexpected format. Please retry.");
+    if (!out.success) return jsonError(502, "unknown", "The AI returned an unexpected format. Please retry.");
     // Make checklist ids unique and stable.
     const prep = { ...out.data, checklist: out.data.checklist.map((c, i) => ({ ...c, id: `${i}-${c.id}`.slice(0, 60) })) };
 
@@ -91,6 +87,6 @@ export async function POST(req: Request) {
     if (error) return jsonError(500, "unknown", "Couldn't save the checklist. Please retry.");
     return Response.json({ prep });
   } catch (err) {
-    return errorResponse(err);
+    return llmErrorResponse(err);
   }
 }

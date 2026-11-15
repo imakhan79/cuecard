@@ -18,7 +18,8 @@ An AI interview assistant built with **Next.js 16** (App Router, TypeScript, Tai
 
 ## Tech notes
 
-- All Claude calls run on the server (`src/app/api/*`, `src/lib/ai/claude.ts`). The API key never reaches the browser.
+- **AI providers:** Claude (`claude-opus-5-5`) is the main model. If Claude can't serve a request (no key, no credit, invalid key, rate limit, outage or network error) and `GEMINI_API_KEY` is set, the same request goes to Google Gemini (`gemini-3.5-flash`) automatically. Set `AI_PROVIDER=claude` or `AI_PROVIDER=gemini` to force one (`src/lib/ai/llm.ts`).
+- All AI calls run on the server (`src/app/api/*`, `src/lib/ai/claude.ts`). The API key never reaches the browser.
 - Live answers stream as NDJSON with `output_config: { effort: "low" }`. Questions and feedback use `effort: "medium"` with structured JSON output. No `temperature` or `budget_tokens` is sent.
 - The resume and job description are sent as a cached system block (prompt caching), so repeat questions in the same interview are cheaper and faster.
 - Server-side refusal fallback (`fallbacks: "default"`) is turned on: if Opus 5.5 declines a request on policy grounds, the API retries on its default fallback model.
