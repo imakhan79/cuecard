@@ -23,8 +23,8 @@ export function detectPlatform(url: string | null | undefined): MeetingPlatform 
 
 /** Short per-platform tips for sharing meeting audio with the copilot. */
 export const SHARE_TIPS: Record<MeetingPlatform, string> = {
-  meet: "Open the Meet call in a Chrome or Edge tab. When sharing, pick that tab and turn on “Also share tab audio”.",
-  zoom: "In the browser: join with “Join from your browser” and share that tab with tab audio on. In the Zoom desktop app: share your entire screen and turn on “Also share system audio” (Windows/ChromeOS).",
-  teams: "In the browser: join from teams.microsoft.com and share that tab with tab audio on. In the Teams desktop app: share your entire screen and turn on “Also share system audio” (Windows/ChromeOS).",
-  other: "Share the tab or screen where the call is running, and turn on the audio-sharing option.",
+  meet: "Open the Meet call in its own Chrome or Edge tab first. Then click Start copilot → choose “Chrome Tab” → pick the Meet tab → keep “Also share tab audio” ON → Share.",
+  zoom: "Browser: join with “Join from your browser”, then Start copilot → “Chrome Tab” → pick the Zoom tab → keep “Also share tab audio” ON. Desktop app (Windows): Start copilot → “Entire screen” → switch ON “Also share system audio”.",
+  teams: "Browser: join at teams.microsoft.com, then Start copilot → “Chrome Tab” → pick the Teams tab → keep “Also share tab audio” ON. Desktop app (Windows): Start copilot → “Entire screen” → switch ON “Also share system audio”.",
+  other: "Start copilot → choose “Chrome Tab” and pick the call's tab with “Also share tab audio” ON, or “Entire screen” with “Also share system audio” ON (Windows). Sharing a single “Window” never includes sound.",
 };

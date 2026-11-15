@@ -96,10 +96,17 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
     let display: MediaStream;
     try {
       display = await navigator.mediaDevices.getDisplayMedia({
-        video: true, // required by browsers; we never record video
+        // Video is required by browsers; we only use it for Screen Help.
+        // displaySurface "browser" opens Chrome's picker on the "Chrome Tab" list, the only
+        // choice (besides Entire screen on Windows) that can include audio.
+        video: { displaySurface: "browser" } as MediaTrackConstraints,
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-        // Chrome hints: offer system/tab audio and prefer a tab.
-        ...({ systemAudio: "include", preferCurrentTab: false, selfBrowserSurface: "exclude" } as object),
+        ...({
+          systemAudio: "include",
+          preferCurrentTab: false,
+          selfBrowserSurface: "exclude",
+          surfaceSwitching: "include",
+        } as object),
       } as DisplayMediaStreamOptions);
     } catch (e) {
       const name = (e as Error).name;
@@ -120,8 +127,17 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
 
     const audioTracks = display.getAudioTracks();
     if (!audioTracks.length) {
+      const surface = (display.getVideoTracks()[0]?.getSettings() as { displaySurface?: string } | undefined)?.displaySurface;
       display.getTracks().forEach((t) => t.stop());
-      setError({ code: "no_audio", message: "No audio was shared. Start again and turn on “Share tab audio” (or “Share system audio”)." });
+      setError({
+        code: "no_audio",
+        message:
+          surface === "window"
+            ? "You shared a window, and windows can't share sound. Click Start copilot again, choose the “Chrome Tab” option, pick your meeting tab, and keep “Also share tab audio” switched on."
+            : surface === "monitor"
+              ? "Your screen was shared without sound. Click Start copilot again and switch on “Also share system audio” at the bottom (Windows), or choose “Chrome Tab” and pick the meeting tab instead."
+              : "The tab was shared without sound. Click Start copilot again, pick your meeting tab, and make sure “Also share tab audio” is switched on at the bottom.",
+      });
       return;
     }
 
