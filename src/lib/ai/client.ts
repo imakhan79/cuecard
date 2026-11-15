@@ -45,12 +45,19 @@ export async function postJson<T>(url: string, body: unknown, signal?: AbortSign
 
 type StreamEvent =
   | { type: "text"; text: string }
-  | { type: "done"; questionId: string | null }
+  | { type: "done"; questionId: string | null; none?: boolean }
   | { type: "error"; error: AiError };
 
-/** Calls /api/answer and invokes onText for every streamed chunk. Resolves with the saved question id. */
+type AnswerBody =
+  | { mode?: "question"; sessionId: string; question: string; questionId?: string }
+  | { mode: "copilot"; sessionId: string; transcript: string };
+
+/**
+ * Calls /api/answer and invokes onText for every streamed chunk.
+ * Resolves with the saved question id (null if nothing was saved; for copilot, null when no question was found).
+ */
 export async function streamAnswer(
-  body: { sessionId: string; question: string; questionId?: string },
+  body: AnswerBody,
   onText: (chunk: string) => void,
   signal?: AbortSignal,
 ): Promise<string | null> {

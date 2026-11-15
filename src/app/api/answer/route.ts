@@ -8,19 +8,36 @@ import {
   FALLBACK,
   REFUSAL_MESSAGE,
 } from "@/lib/ai/claude";
-import { LIVE_ANSWER_SYSTEM, contextBlock } from "@/lib/ai/prompts";
+import { COPILOT_SYSTEM, LIVE_ANSWER_SYSTEM, contextBlock } from "@/lib/ai/prompts";
 import { loadInterviewContext } from "@/lib/data";
 import { getUser } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-const Body = z.object({
-  sessionId: z.uuid(),
-  question: z.string().trim().min(1).max(5000),
-  /** When answering an existing (practice) question, update it instead of inserting a new one. */
-  questionId: z.uuid().optional(),
-});
+const Body = z.union([
+  z.object({
+    mode: z.literal("question").default("question"),
+    sessionId: z.uuid(),
+    question: z.string().trim().min(1).max(5000),
+    /** When answering an existing (practice) question, update it instead of inserting a new one. */
+    questionId: z.uuid().optional(),
+  }),
+  z.object({
+    /** Copilot: Claude finds the latest question in a live meeting transcript and answers it. */
+    mode: z.literal("copilot"),
+    sessionId: z.uuid(),
+    transcript: z.string().trim().min(1).max(20000),
+  }),
+]);
+
+/** Splits Claude's copilot output into the detected question and the answer. */
+function splitCopilot(text: string) {
+  const nl = text.indexOf("\n");
+  const first = (nl === -1 ? text : text.slice(0, nl)).trim();
+  const question = first.replace(/^Q:\s*/i, "").trim();
+  return { question, answer: nl === -1 ? "" : text.slice(nl + 1).trim(), none: /^none\.?$/i.test(question) };
+}
 
 /**
  * Streams a suggested answer as NDJSON lines:
@@ -35,7 +52,10 @@ export async function POST(req: Request) {
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return jsonError(400, "bad_request", "Please enter a question.");
-  const { sessionId, question, questionId } = parsed.data;
+  const input = parsed.data;
+  const { sessionId } = input;
+  const copilot = input.mode === "copilot";
+  const questionId = input.mode === "copilot" ? undefined : input.questionId;
 
   const loaded = await loadInterviewContext(supabase, sessionId);
   if (!loaded) return jsonError(404, "not_found", "Interview session not found.");
@@ -51,11 +71,19 @@ export async function POST(req: Request) {
         output_config: { effort: "low" },
         ...FALLBACK,
         system: [
-          { type: "text", text: LIVE_ANSWER_SYSTEM },
+          { type: "text", text: copilot ? COPILOT_SYSTEM : LIVE_ANSWER_SYSTEM },
           // Resume + job description stay the same for a whole session, so cache them.
           { type: "text", text: contextBlock(loaded.context), cache_control: { type: "ephemeral" } },
         ],
-        messages: [{ role: "user", content: `Interview question:\n${question}` }],
+        messages: [
+          {
+            role: "user",
+            content:
+              input.mode === "copilot"
+                ? `<meeting_transcript>\n${input.transcript}\n</meeting_transcript>\n\nAnswer the interviewer's latest question.`
+                : `Interview question:\n${input.question}`,
+          },
+        ],
       },
       { signal: req.signal },
     );
@@ -90,6 +118,16 @@ export async function POST(req: Request) {
         }
 
         let savedId: string | null = questionId ?? null;
+        let question = input.mode === "copilot" ? "" : input.question;
+        if (copilot) {
+          const split = splitCopilot(answer);
+          if (split.none || !split.answer) {
+            send({ type: "done", questionId: null, none: true });
+            return;
+          }
+          question = split.question;
+          answer = split.answer;
+        }
         if (questionId) {
           await supabase.from("questions").update({ suggested_answer: answer }).eq("id", questionId);
         } else {
@@ -98,8 +136,8 @@ export async function POST(req: Request) {
             .insert({
               session_id: sessionId,
               user_id: user.id,
-              source: "live",
-              question,
+              source: copilot ? "copilot" : "live",
+              question: question.slice(0, 5000),
               suggested_answer: answer,
             })
             .select("id")

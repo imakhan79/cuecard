@@ -16,7 +16,7 @@ export default async function SessionPage({ params }: { params: Promise<{ id: st
   const [{ data: session }, { data: questions }, { data: resumes }] = await Promise.all([
     supabase
       .from("interview_sessions")
-      .select("id, title, company, role, job_description, resume_id, created_at")
+      .select("id, title, company, role, job_description, meeting_url, resume_id, created_at")
       .eq("id", id)
       .maybeSingle<InterviewSession>(),
     supabase

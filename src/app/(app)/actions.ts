@@ -68,6 +68,13 @@ const SessionInput = z.object({
   company: opt(200),
   role: opt(200),
   job_description: opt(50000),
+  meeting_url: z
+    .string()
+    .trim()
+    .max(2000)
+    .transform((v) => v || null)
+    .pipe(z.url({ protocol: /^https$/, message: "Meeting link must be an https:// URL." }).nullable())
+    .optional(),
   resume_id: z
     .string()
     .transform((v) => v || null)
@@ -81,6 +88,7 @@ function sessionFields(form: FormData) {
     company: form.get("company"),
     role: form.get("role"),
     job_description: form.get("job_description"),
+    meeting_url: form.get("meeting_url") ?? "",
     resume_id: form.get("resume_id") ?? "",
   });
 }

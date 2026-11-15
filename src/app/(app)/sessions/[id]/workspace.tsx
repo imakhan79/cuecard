@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Copy,
   FileText,
+  Headphones,
   History,
   Loader2,
   MessageSquareText,
@@ -19,6 +20,7 @@ import {
   Trash2,
   Check,
 } from "lucide-react";
+import { CopilotPanel } from "@/components/copilot/copilot-panel";
 import { ErrorNotice } from "@/components/error-notice";
 import { Markdown } from "@/components/markdown";
 import { MicButton } from "@/components/mic-button";
@@ -28,7 +30,7 @@ import type { AiError } from "@/lib/ai/errors";
 import type { Answer, InterviewSession, Question, Resume } from "@/lib/types";
 import { deleteQuestion, deleteSession, updateSession } from "../../actions";
 
-type Tab = "live" | "practice" | "history";
+type Tab = "copilot" | "live" | "practice" | "history";
 
 function toAiError(e: unknown): AiError | null {
   if ((e as Error)?.name === "AbortError") return null;
@@ -46,13 +48,14 @@ export function Workspace({
   resumes: Pick<Resume, "id" | "title">[];
   resumeTitle: string | null;
 }) {
-  const [tab, setTab] = useState<Tab>("live");
+  const [tab, setTab] = useState<Tab>("copilot");
   const [showDetails, setShowDetails] = useState(false);
   const [deleting, startDelete] = useTransition();
   const practice = questions.filter((q) => q.source === "practice");
 
   const tabs: { id: Tab; label: string; icon: typeof Radio; count?: number }[] = [
-    { id: "live", label: "Live", icon: Radio },
+    { id: "copilot", label: "Copilot", icon: Headphones },
+    { id: "live", label: "Type", icon: Radio },
     { id: "practice", label: "Practice", icon: Sparkles, count: practice.length },
     { id: "history", label: "History", icon: History, count: questions.length },
   ];
@@ -112,7 +115,7 @@ export function Workspace({
         </div>
       )}
 
-      <div role="tablist" className="mt-6 grid grid-cols-3 gap-1 rounded-xl border border-border bg-surface p-1">
+      <div role="tablist" className="mt-6 grid grid-cols-4 gap-1 rounded-xl border border-border bg-surface p-1">
         {tabs.map(({ id, label, icon: Icon, count }) => (
           <button
             key={id}
@@ -131,6 +134,7 @@ export function Workspace({
       </div>
 
       <div className="mt-6">
+        {tab === "copilot" && <CopilotPanel sessionId={session.id} meetingUrl={session.meeting_url} />}
         {tab === "live" && <LivePanel sessionId={session.id} />}
         {tab === "practice" && <PracticePanel sessionId={session.id} questions={practice} />}
         {tab === "history" && <HistoryPanel sessionId={session.id} questions={questions} />}
@@ -516,7 +520,7 @@ function HistoryPanel({ sessionId, questions }: { sessionId: string; questions: 
           <summary className="flex cursor-pointer list-none items-start gap-3 p-4 sm:p-5">
             <span
               className={`mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase ${
-                q.source === "live" ? "bg-accent-soft text-accent" : "bg-surface-2 text-muted"
+                q.source === "practice" ? "bg-surface-2 text-muted" : "bg-accent-soft text-accent"
               }`}
             >
               {q.source}

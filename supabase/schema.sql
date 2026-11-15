@@ -54,6 +54,7 @@ create table if not exists public.interview_sessions (
   company text,
   role text,
   job_description text check (char_length(job_description) <= 50000),
+  meeting_url text check (meeting_url is null or char_length(meeting_url) <= 2000),
   created_at timestamptz not null default now()
 );
 create index if not exists interview_sessions_user_id_idx on public.interview_sessions (user_id);
@@ -67,11 +68,17 @@ create table if not exists public.questions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
   session_id uuid not null references public.interview_sessions (id) on delete cascade,
-  source text not null check (source in ('live', 'practice')),
+  source text not null,
   question text not null check (char_length(question) between 1 and 5000),
   suggested_answer text,
   created_at timestamptz not null default now()
 );
+-- live = typed/dictated, practice = generated, copilot = detected from meeting audio
+alter table public.questions drop constraint if exists questions_source_check;
+alter table public.questions
+  add constraint questions_source_check check (source in ('live', 'practice', 'copilot'));
+alter table public.interview_sessions
+  add column if not exists meeting_url text check (meeting_url is null or char_length(meeting_url) <= 2000);
 create index if not exists questions_user_id_idx on public.questions (user_id);
 create index if not exists questions_session_id_idx on public.questions (session_id, created_at);
 

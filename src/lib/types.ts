@@ -24,6 +24,7 @@ export type InterviewSession = {
   company: string | null;
   role: string | null;
   job_description: string | null;
+  meeting_url: string | null;
   resume_id: string | null;
   created_at: string;
 };
@@ -40,7 +41,7 @@ export type Answer = {
 export type Question = {
   id: string;
   session_id: string;
-  source: "live" | "practice";
+  source: "live" | "practice" | "copilot";
   question: string;
   suggested_answer: string | null;
   created_at: string;

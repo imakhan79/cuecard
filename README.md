@@ -7,6 +7,7 @@ An AI interview assistant built with **Next.js 16** (App Router, TypeScript, Tai
 - **Accounts:** email/password sign-up and sign-in with Supabase Auth. `src/proxy.ts` protects every app page and sends signed-out users to `/login`.
 - **Resumes:** paste your resume, or upload a `.txt`/`.md` file or a PDF. Claude transcribes the PDF word for word, on the server.
 - **Interviews:** one per interview, holding the company, role, job description and the linked resume.
+- **Copilot for Zoom, Microsoft Teams and Google Meet:** save the meeting link on an interview and open it with **Join**. Then share the meeting tab (or your whole screen, with system audio) with Cuecard. It hears the interviewer, transcribes what they say, works out each question, and streams an answer automatically. **Pop out** puts the copilot in a small always-on-top window beside the call, and it works with the Zoom and Teams desktop apps too (Chrome/Edge). Prefer not to share? **Microphone mode** uses the browser's free speech recognition instead.
 - **Live answers:** type the interviewer's question, or dictate it with the browser's speech recognition. A spoken-style answer streams back in seconds.
 - **Practice:** generates the questions you're most likely to face. You answer in your own words and get a 1–10 score, strengths, things to improve, any claims your resume doesn't back up, and an improved version. A suggested answer is available on demand.
 - **History:** every question and answer is saved per interview. You can copy or delete them.
@@ -50,11 +51,13 @@ Fill in `.env.local`:
 | --- | --- |
 | `ANTHROPIC_API_KEY` | Anthropic Console → API keys |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API → Project URL |
+| `DEEPGRAM_API_KEY` or `OPENAI_API_KEY` | Optional. Speech-to-text for Copilot's *Meeting audio* mode ([Deepgram](https://console.deepgram.com) is used if both are set). Microphone mode works without either. |
+| `DEMO_EMAIL` / `DEMO_PASSWORD` | Optional. One-click demo login (see below). |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase → Project Settings → API Keys → publishable key (`sb_publishable_…`). The legacy `anon` key also works. |
 
 ### 4. Database
 
-Open the Supabase **SQL Editor**, paste the contents of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**. The script is safe to re-run.
+Open the Supabase **SQL Editor**, paste the contents of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**. The script is safe to re-run. If you set up the database before Copilot was added, also run [`supabase/migrations/002_copilot.sql`](supabase/migrations/002_copilot.sql).
 
 You can also run it with psql (use the Session pooler connection string from Supabase → Connect):
 
@@ -102,10 +105,12 @@ src/
     (app)/resumes              # resume manager (paste / upload)
     (app)/sessions/[id]        # live, practice and history workspace
     (app)/actions.ts           # server actions (CRUD, sign out)
-    api/answer                 # streamed live / suggested answers
+    api/answer                 # streamed live / suggested / copilot answers
+    api/transcribe             # meeting-audio speech-to-text (Deepgram or OpenAI)
     api/questions              # practice question generation
     api/feedback               # answer scoring and feedback
     api/resume-extract         # PDF → text
+  components/copilot/          # meeting audio capture, voice detection, pop-out window
   lib/
     ai/                        # Claude client, prompts, error mapping, browser helpers
     supabase/                  # browser, server and proxy clients

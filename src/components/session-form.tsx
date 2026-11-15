@@ -43,6 +43,10 @@ export function SessionForm({
         </div>
       </div>
       <div>
+        <label htmlFor="meeting_url" className="label">Meeting link <span className="font-normal text-muted">(Zoom, Teams or Google Meet, optional)</span></label>
+        <input id="meeting_url" name="meeting_url" type="url" inputMode="url" maxLength={2000} className="input" defaultValue={session?.meeting_url ?? ""} placeholder="https://meet.google.com/abc-defg-hij" />
+      </div>
+      <div>
         <label htmlFor="resume_id" className="label">Resume</label>
         <select id="resume_id" name="resume_id" className="input" defaultValue={session?.resume_id ?? resumes[0]?.id ?? ""}>
           <option value="">No resume (answers will use placeholders)</option>
