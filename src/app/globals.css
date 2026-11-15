@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: #f7f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f1f5;
+  --border: #e4e4ea;
+  --fg: #16161d;
+  --muted: #62626e;
+  --accent: #5b4cf0;
+  --accent-fg: #ffffff;
+  --accent-soft: #eeebff;
+  --danger: #c8283c;
+  --danger-soft: #fdecee;
+  --success: #15803d;
+  --success-soft: #e8f6ec;
+  --warn: #a15c07;
+  --warn-soft: #fdf3e3;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0d0d12;
+  --surface: #15151c;
+  --surface-2: #1d1d26;
+  --border: #2a2a36;
+  --fg: #ececf1;
+  --muted: #9c9cab;
+  --accent: #8b7fff;
+  --accent-fg: #0d0d12;
+  --accent-soft: #221f3d;
+  --danger: #ff6b7d;
+  --danger-soft: #3a1820;
+  --success: #4ade80;
+  --success-soft: #12301d;
+  --warn: #fbbf24;
+  --warn-soft: #33270f;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+@utility card {
+  @apply rounded-2xl border border-border bg-surface;
+}
+@utility input {
+  @apply w-full rounded-xl border border-border bg-surface px-3.5 py-2.5 text-[15px] text-fg placeholder:text-muted/70 outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15 disabled:opacity-60;
+}
+@utility label {
+  @apply mb-1.5 block text-sm font-medium text-fg;
+}
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent/25;
+}
+@utility btn-primary {
+  @apply btn bg-accent text-accent-fg hover:brightness-110 active:brightness-95;
+}
+@utility btn-secondary {
+  @apply btn border border-border bg-surface text-fg hover:bg-surface-2;
+}
+@utility btn-ghost {
+  @apply btn text-muted hover:bg-surface-2 hover:text-fg;
+}
+@utility btn-danger {
+  @apply btn text-danger hover:bg-danger-soft;
+}
