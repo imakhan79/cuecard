@@ -416,8 +416,8 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
 
         {source === "meeting" && live && meeting.noSignal && (
           <p role="alert" className="rounded-lg bg-warn-soft px-3 py-2 text-sm text-warn">
-            No sound is coming from the shared tab. Check that you picked the tab where the call is playing (not this
-            Cuecard tab), that the call isn&apos;t muted, and that someone is speaking. If needed, click Stop and share again.
+            No sound yet from the shared tab. Check that you picked the tab where the call is playing (not this Cuecard
+            tab) and that the call isn&apos;t muted. If needed, click Stop and share again.
           </p>
         )}
         {source === "meeting" && live && (

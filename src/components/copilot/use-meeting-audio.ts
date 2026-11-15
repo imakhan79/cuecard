@@ -171,7 +171,8 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
     let lastVoice = 0;
     let voiceNow = false;
     let noiseFloor = 0.002;
-    let lastSignal = performance.now();
+    const sharedAt = performance.now();
+    let everHeard = false;
     let noSignalNow = false;
 
     processor.onaudioprocess = (e) => {
@@ -206,8 +207,9 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
       noiseFloor = rms < noiseFloor ? rms : noiseFloor * 0.995 + rms * 0.005;
       const threshold = Math.max(MIN_VOICE_RMS, noiseFloor * 3);
 
-      if (rms > 0.0005) lastSignal = performance.now();
-      const silentTooLong = performance.now() - lastSignal > NO_SIGNAL_MS;
+      if (rms > 0.0005) everHeard = true;
+      // Meet sends pure silence between speakers, so only warn if nothing at all has been heard yet.
+      const silentTooLong = !everHeard && performance.now() - sharedAt > NO_SIGNAL_MS;
       if (silentTooLong !== noSignalNow) {
         noSignalNow = silentTooLong;
         setNoSignal(silentTooLong);

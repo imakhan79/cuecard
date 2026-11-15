@@ -56,7 +56,16 @@ export function toAiError(err: unknown): { status: number; error: AiError } {
     };
   }
   if (err instanceof Anthropic.BadRequestError) {
-    return { status: 400, error: { code: "bad_request", message: err.message } };
+    if (/credit balance/i.test(err.message)) {
+      return {
+        status: 402,
+        error: {
+          code: "invalid_key",
+          message: "The Anthropic account behind ANTHROPIC_API_KEY has no credit. Add credit at console.anthropic.com → Plans & Billing, then retry.",
+        },
+      };
+    }
+    return { status: 400, error: { code: "bad_request", message: "Claude couldn't process that request. Please retry." } };
   }
   if (err instanceof Anthropic.InternalServerError || (err instanceof Anthropic.APIError && err.status === 529)) {
     return {
