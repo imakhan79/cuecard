@@ -1,5 +1,6 @@
 import { jsonError } from "@/lib/ai/claude";
 import { getUser } from "@/lib/supabase/server";
+import { geminiKeys, geminiPost } from "@/lib/ai/gemini";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -23,29 +24,27 @@ export async function POST(req: Request) {
 
   const deepgram = process.env.DEEPGRAM_API_KEY;
   const openai = process.env.OPENAI_API_KEY;
-  const gemini = process.env.GEMINI_API_KEY;
+  const gemini = geminiKeys().length > 0;
 
   if (!deepgram && !openai && gemini) {
     // Google's dedicated speech-to-text model. Unlike general Gemini models it returns
     // nothing for silence/noise instead of inventing words, which matters here: an
     // invented sentence would become a fake interviewer question.
     try {
-      const res = await fetch(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-transcribe:generateContent",
+      // Rotates across all configured Gemini keys when one hits its free-tier rate limit.
+      const res = await geminiPost(
+        ["gemini-3.5-transcribe"],
+        "generateContent",
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-goog-api-key": gemini },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  { inline_data: { mime_type: (audio.type || "audio/wav").split(";")[0], data: Buffer.from(await audio.arrayBuffer()).toString("base64") } },
-                ],
-              },
-            ],
-          }),
-          signal: req.signal,
+          contents: [
+            {
+              parts: [
+                { inline_data: { mime_type: (audio.type || "audio/wav").split(";")[0], data: Buffer.from(await audio.arrayBuffer()).toString("base64") } },
+              ],
+            },
+          ],
         },
+        req.signal,
       );
       if (res.status === 400 || res.status === 401 || res.status === 403) {
         return jsonError(502, "invalid_key", "The Gemini API key was rejected. Check GEMINI_API_KEY.");

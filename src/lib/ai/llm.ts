@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { FALLBACK, MODEL, MissingKeyError, getClaude, toAiError } from "./claude";
 import type { AiError } from "./errors";
+import { geminiKeys, geminiPost } from "./gemini";
 
 /**
  * Provider-neutral text generation. Claude (claude-opus-5-5) is the primary model.
@@ -43,14 +44,15 @@ export class LlmError extends Error {
 /** Thrown when the model declines (policy refusal / safety block). */
 export class RefusedError extends Error {}
 
-const GEMINI_MODEL = "gemini-3.5-flash";
+// Tried in order; each model has its own free-tier quota per key.
+const GEMINI_MODELS = ["gemini-3.5-flash", "gemini-3.5-flash-lite"];
 
 function provider(): "claude" | "gemini" | "auto" {
   const p = (process.env.AI_PROVIDER ?? "auto").toLowerCase();
   return p === "claude" || p === "gemini" ? p : "auto";
 }
 
-const hasGemini = () => Boolean(process.env.GEMINI_API_KEY);
+const hasGemini = () => geminiKeys().length > 0;
 
 /** Claude failures that Gemini can cover. Bad requests (our bug) and refusals are not retried. */
 function shouldFallBack(err: unknown) {
@@ -133,18 +135,16 @@ function geminiBody(req: LlmRequest) {
 }
 
 async function geminiFetch(req: LlmRequest, method: "generateContent" | "streamGenerateContent") {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new LlmError(500, { code: "invalid_key", message: "No AI provider is configured on the server." });
+  if (!hasGemini()) throw new LlmError(500, { code: "invalid_key", message: "No AI provider is configured on the server." });
   let res: Response;
   try {
-    res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:${method}${method === "streamGenerateContent" ? "?alt=sse" : ""}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify(geminiBody(req)),
-        signal: req.signal ? AbortSignal.any([req.signal, AbortSignal.timeout(90_000)]) : AbortSignal.timeout(90_000),
-      },
+    // Rotates across every Gemini key and model so one free-tier quota running out doesn't stop the app.
+    res = await geminiPost(
+      GEMINI_MODELS,
+      method,
+      geminiBody(req),
+      req.signal ? AbortSignal.any([req.signal, AbortSignal.timeout(90_000)]) : AbortSignal.timeout(90_000),
+      method === "streamGenerateContent" ? "?alt=sse" : "",
     );
   } catch (e) {
     if (req.signal?.aborted) throw e;

@@ -6,19 +6,19 @@ export type CaptureError = { code: "no_audio" | "denied" | "unsupported" | "fail
 
 type Options = {
   /** Called with each recorded utterance (cut at a natural pause). */
-  onClip: (clip: Blob) => void;
+  onClip: (clip: Blob, pcm16k: Float32Array) => void;
   /** Called when the other side starts speaking. */
   onVoiceStart?: () => void;
 };
 
 const MIN_VOICE_RMS = 0.004; // absolute floor for the adaptive speech threshold
 const NO_SIGNAL_MS = 8000; // warn if the shared tab is completely silent this long
-const PAUSE_MS = 800; // silence that ends an utterance
-const MIN_CLIP_MS = 700;
+const PAUSE_MS = 1200; // silence that ends an utterance (longer = fewer, complete clips)
+const MIN_CLIP_MS = 1000;
 const MAX_CLIP_MS = 20000;
 
-/** Concatenates PCM chunks, resamples to `outRate`, and encodes 16-bit mono WAV. */
-function encodeWav(chunks: Float32Array[], inRate: number, outRate: number): Blob {
+/** Concatenates PCM chunks and resamples to `outRate` (box filter). */
+function resample(chunks: Float32Array[], inRate: number, outRate: number): Float32Array {
   const total = chunks.reduce((n, c) => n + c.length, 0);
   const input = new Float32Array(total);
   let o = 0;
@@ -28,6 +28,20 @@ function encodeWav(chunks: Float32Array[], inRate: number, outRate: number): Blo
   }
   const ratio = inRate / outRate;
   const length = Math.floor(total / ratio);
+  const out = new Float32Array(length);
+  for (let i = 0; i < length; i++) {
+    const start = Math.floor(i * ratio);
+    const end = Math.min(total, Math.floor((i + 1) * ratio));
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += input[j];
+    out[i] = Math.max(-1, Math.min(1, sum / Math.max(1, end - start)));
+  }
+  return out;
+}
+
+/** Encodes mono PCM as 16-bit WAV. */
+function toWav(pcm: Float32Array, outRate: number): Blob {
+  const length = pcm.length;
   const view = new DataView(new ArrayBuffer(44 + length * 2));
   const str = (off: number, s: string) => [...s].forEach((ch, i) => view.setUint8(off + i, ch.charCodeAt(0)));
   str(0, "RIFF");
@@ -43,12 +57,7 @@ function encodeWav(chunks: Float32Array[], inRate: number, outRate: number): Blo
   str(36, "data");
   view.setUint32(40, length * 2, true);
   for (let i = 0; i < length; i++) {
-    // Average the input samples that fall into this output sample (simple low-pass).
-    const start = Math.floor(i * ratio);
-    const end = Math.min(total, Math.floor((i + 1) * ratio));
-    let sum = 0;
-    for (let j = start; j < end; j++) sum += input[j];
-    const s = Math.max(-1, Math.min(1, sum / Math.max(1, end - start)));
+    const s = pcm[i];
     view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
   }
   return new Blob([view], { type: "audio/wav" });
@@ -190,7 +199,8 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
       const duration = performance.now() - clipStart;
       begin();
       if (send && duration >= MIN_CLIP_MS && parts.length) {
-        cbs.current.onClip(encodeWav(parts, ctx.sampleRate, 16000));
+        const pcm = resample(parts, ctx.sampleRate, 16000);
+        cbs.current.onClip(toWav(pcm, 16000), pcm);
       }
     };
 

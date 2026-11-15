@@ -28,6 +28,7 @@ import { SHARE_TIPS, detectPlatform } from "@/lib/meeting";
 import { MeetingLink } from "./meeting-link";
 import { PopOutPortal, usePopOut } from "./pop-out";
 import { captureScreenOnce, useMeetingAudio } from "./use-meeting-audio";
+import { useLocalWhisper } from "./use-local-whisper";
 import { DebriefView } from "@/components/debrief-view";
 import { streamForm } from "@/lib/ai/client";
 import type { Debrief } from "@/lib/types";
@@ -182,25 +183,51 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
 
   /* ---------------- meeting audio ---------------- */
 
+  // Listening engine: on-device Whisper (free, unlimited, private) or cloud (Gemini/Deepgram/OpenAI).
+  const [engine, setEngine] = useState<"device" | "cloud">("device");
+  const engineRef = useRef<"device" | "cloud">("device");
+  useEffect(() => {
+    engineRef.current = engine;
+  }, [engine]);
+  const whisper = useLocalWhisper();
+  const { transcribe: localTranscribe } = whisper;
+
   const onClip = useCallback(
-    (clip: Blob) => {
+    (clip: Blob, pcm: Float32Array) => {
       // Transcribe clips one at a time so lines stay in order.
       setTranscribing((n) => n + 1);
       queue.current = queue.current.then(async () => {
         try {
-          const form = new FormData();
-          form.append("audio", clip, "clip.wav");
-          form.append("lang", langRef.current);
-          const { text } = await postJson<{ text: string }>("/api/transcribe", form);
-          addLine(text);
+          if (engineRef.current === "device") {
+            addLine(await localTranscribe(pcm, langRef.current));
+            return;
+          }
+          // Cloud: retry rate-limited clips quietly (free tiers have per-minute caps).
+          for (let attempt = 0; ; attempt++) {
+            try {
+              const form = new FormData();
+              form.append("audio", clip, "clip.wav");
+              form.append("lang", langRef.current);
+              const { text } = await postJson<{ text: string }>("/api/transcribe", form);
+              addLine(text);
+              return;
+            } catch (e) {
+              if (e instanceof AiRequestError && e.error.code === "rate_limit" && attempt < 3) {
+                await new Promise((r) => setTimeout(r, 3000 * (attempt + 1)));
+                continue;
+              }
+              throw e;
+            }
+          }
         } catch (e) {
           if (e instanceof AiRequestError) setError(e.error);
+          else setError({ code: "unknown", message: (e as Error).message || "Transcription failed." });
         } finally {
           setTranscribing((n) => n - 1);
         }
       });
     },
-    [addLine],
+    [addLine, localTranscribe],
   );
 
   const meeting = useMeetingAudio({ onClip, onVoiceStart: cancelAuto });
@@ -222,6 +249,7 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
   const start = async () => {
     setError(null);
     if (source === "meeting") {
+      if (engine === "device") void whisper.load(); // downloads once, then cached
       await meeting.start();
     } else {
       speech.start();
@@ -413,6 +441,41 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
             ? SHARE_TIPS[platform ?? "other"]
             : "Uses your browser's speech recognition (Chrome/Edge, free). It hears the interviewer through your speakers, so don't use headphones in this mode."}
         </p>
+
+        {source === "meeting" && (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-muted">Listening engine:</span>
+            <div role="radiogroup" aria-label="Listening engine" className="inline-flex gap-1 rounded-lg bg-surface-2 p-1">
+              {(
+                [
+                  { id: "device", label: "On-device · free, unlimited" },
+                  { id: "cloud", label: "Cloud · faster" },
+                ] as const
+              ).map((o) => (
+                <button
+                  key={o.id}
+                  role="radio"
+                  aria-checked={engine === o.id}
+                  disabled={isRunning}
+                  onClick={() => setEngine(o.id)}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium transition disabled:opacity-60 ${engine === o.id ? "bg-surface text-fg shadow-sm" : "text-muted"}`}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            {engine === "device" && whisper.status === "loading" && (
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+                <Loader2 className="size-3.5 animate-spin" />
+                {whisper.progress && whisper.progress.total
+                  ? `Downloading speech model ${Math.round((whisper.progress.loaded / whisper.progress.total) * 100)}% (one time)`
+                  : "Loading speech model…"}
+              </span>
+            )}
+            {engine === "device" && whisper.status === "ready" && <span className="text-xs text-success">Speech model ready</span>}
+            {engine === "device" && whisper.status === "error" && <span className="text-xs text-danger">{whisper.error} Switch to Cloud.</span>}
+          </div>
+        )}
 
         {source === "meeting" && live && meeting.noSignal && (
           <p role="alert" className="rounded-lg bg-warn-soft px-3 py-2 text-sm text-warn">
