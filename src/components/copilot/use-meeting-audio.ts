@@ -11,7 +11,8 @@ type Options = {
   onVoiceStart?: () => void;
 };
 
-const VOICE_RMS = 0.012; // speech threshold
+const MIN_VOICE_RMS = 0.004; // absolute floor for the adaptive speech threshold
+const NO_SIGNAL_MS = 8000; // warn if the shared tab is completely silent this long
 const PAUSE_MS = 800; // silence that ends an utterance
 const MIN_CLIP_MS = 700;
 const MAX_CLIP_MS = 20000;
@@ -61,6 +62,8 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
   const [active, setActive] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [level, setLevel] = useState(0);
+  /** True when the shared source has produced no sound at all for a while (wrong tab, muted call…). */
+  const [noSignal, setNoSignal] = useState(false);
   const [error, setError] = useState<CaptureError | null>(null);
 
   const cbs = useRef({ onClip, onVoiceStart });
@@ -84,6 +87,7 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
     setActive(false);
     setSpeaking(false);
     setLevel(0);
+    setNoSignal(false);
   }, []);
 
   const start = useCallback(async () => {
@@ -143,6 +147,9 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
 
     const audioStream = new MediaStream(audioTracks);
     const ctx = new AudioContext();
+    // The share dialog can swallow the click's user activation, leaving the context suspended
+    // (which makes it hear pure silence). Resume it explicitly.
+    if (ctx.state === "suspended") await ctx.resume().catch(() => {});
     const source = ctx.createMediaStreamSource(audioStream);
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;
@@ -163,6 +170,9 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
     let heardVoice = false;
     let lastVoice = 0;
     let voiceNow = false;
+    let noiseFloor = 0.002;
+    let lastSignal = performance.now();
+    let noSignalNow = false;
 
     processor.onaudioprocess = (e) => {
       chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
@@ -192,8 +202,20 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
       const rms = Math.sqrt(sum / buf.length);
       setLevel(Math.min(1, rms * 12));
 
+      // Adaptive threshold: track the background noise floor and treat clearly-louder audio as speech.
+      noiseFloor = rms < noiseFloor ? rms : noiseFloor * 0.995 + rms * 0.005;
+      const threshold = Math.max(MIN_VOICE_RMS, noiseFloor * 3);
+
+      if (rms > 0.0005) lastSignal = performance.now();
+      const silentTooLong = performance.now() - lastSignal > NO_SIGNAL_MS;
+      if (silentTooLong !== noSignalNow) {
+        noSignalNow = silentTooLong;
+        setNoSignal(silentTooLong);
+      }
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
+
       const now = performance.now();
-      const isVoice = rms > VOICE_RMS;
+      const isVoice = rms > threshold;
       if (isVoice) {
         lastVoice = now;
         if (!heardVoice) heardVoice = true;
@@ -235,7 +257,7 @@ export function useMeetingAudio({ onClip, onVoiceStart }: Options) {
   /** Small fingerprint of the shared screen, for change detection. */
   const signature = useCallback(() => (video.current ? frameSignature(video.current) : null), []);
 
-  return { active, speaking, level, error, start, stop, grabFrame, signature };
+  return { active, speaking, level, noSignal, error, start, stop, grabFrame, signature };
 }
 
 /** Draws a video frame to a canvas (max 1600px wide) and encodes it as JPEG. */

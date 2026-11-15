@@ -414,6 +414,12 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
             : "Uses your browser's speech recognition (Chrome/Edge, free). It hears the interviewer through your speakers, so don't use headphones in this mode."}
         </p>
 
+        {source === "meeting" && live && meeting.noSignal && (
+          <p role="alert" className="rounded-lg bg-warn-soft px-3 py-2 text-sm text-warn">
+            No sound is coming from the shared tab. Check that you picked the tab where the call is playing (not this
+            Cuecard tab), that the call isn&apos;t muted, and that someone is speaking. If needed, click Stop and share again.
+          </p>
+        )}
         {source === "meeting" && live && (
           <div className="flex items-center gap-2" aria-hidden>
             <AudioLines className="size-4 text-muted" />
