@@ -38,7 +38,8 @@ type Line = { id: number; text: string };
 type Card = { id: number; question: string; answer: string; streaming: boolean };
 type Source = "meeting" | "mic";
 
-const AUTO_DELAY_MS = 1400; // silence after an utterance before auto-answering
+const AUTO_DELAY_MS = 450; // extra wait after an utterance before auto-answering
+const QUESTION_END = /\?\s*$|\b(tell me|walk me through|describe|explain|why|how would you|what would you|give me an example)\b/i;
 const MIN_WORDS = 4;
 
 function parseStream(text: string) {
@@ -162,7 +163,9 @@ export function CopilotPanel({ sessionId, meetingUrl }: { sessionId: string; mee
   const scheduleAuto = useCallback(() => {
     if (autoTimer.current) window.clearTimeout(autoTimer.current);
     if (!autoRef.current) return;
-    autoTimer.current = window.setTimeout(() => void answerNow(), AUTO_DELAY_MS);
+    // A clear question: answer right away. Otherwise wait briefly in case they keep talking.
+    const lastLine = linesRef.current[linesRef.current.length - 1]?.text ?? "";
+    autoTimer.current = window.setTimeout(() => void answerNow(), QUESTION_END.test(lastLine) ? 0 : AUTO_DELAY_MS);
   }, [answerNow]);
 
   const cancelAuto = useCallback(() => {

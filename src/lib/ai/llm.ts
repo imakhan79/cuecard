@@ -140,7 +140,8 @@ async function geminiFetch(req: LlmRequest, method: "generateContent" | "streamG
   try {
     // Rotates across every Gemini key and model so one free-tier quota running out doesn't stop the app.
     res = await geminiPost(
-      GEMINI_MODELS,
+      // Live/low-effort answers: Flash-Lite first (≈1s to first words), Flash as backup.
+      req.effort === "low" ? [...GEMINI_MODELS].reverse() : GEMINI_MODELS,
       method,
       geminiBody(req),
       req.signal ? AbortSignal.any([req.signal, AbortSignal.timeout(90_000)]) : AbortSignal.timeout(90_000),
